@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import math
+import os
 import time
 from dataclasses import dataclass
 
 import yfinance as yf
+import requests
 
 
 @dataclass(frozen=True)
@@ -45,6 +47,89 @@ def _normalize_pe(v):
     if abs(f) < 1e-12:
         return None
     return f
+
+
+def _extract_raw_number(v):
+    """
+    RapidAPI/Yahoo payloads often wrap numbers as {"raw": ..., "fmt": ...}.
+    Accept plain numbers too.
+    """
+    if v is None:
+        return None
+    if isinstance(v, (int, float)):
+        return _to_float(v)
+    if isinstance(v, dict):
+        return _to_float(v.get("raw") if "raw" in v else v.get("value"))
+    return _to_float(v)
+
+
+def _fundamentals_rapidapi_yahoo(ticker: str) -> dict:
+    """
+    Fundamentals via RapidAPI Yahoo Finance (more reliable than scraping on some hosts).
+
+    Requires env:
+      - RAPIDAPI_KEY
+      - (optional) RAPIDAPI_HOST (default apidojo-yahoo-finance-v1.p.rapidapi.com)
+      - (optional) RAPIDAPI_REGION (default IN)
+    """
+    key = (os.getenv("RAPIDAPI_KEY") or "").strip()
+    if not key:
+        return {}
+
+    host = (os.getenv("RAPIDAPI_HOST") or "apidojo-yahoo-finance-v1.p.rapidapi.com").strip()
+    region = (os.getenv("RAPIDAPI_REGION") or "IN").strip()
+
+    url = f"https://{host}/stock/v2/get-summary"
+    headers = {"x-rapidapi-key": key, "x-rapidapi-host": host}
+    params = {"symbol": ticker, "region": region}
+
+    try:
+        res = requests.get(url, headers=headers, params=params, timeout=15)
+        if res.status_code != 200:
+            return {}
+        data = res.json() if res.content else {}
+    except Exception:
+        return {}
+
+    # PE (best-effort across common modules)
+    trailing_pe = _normalize_pe(
+        _extract_raw_number(
+            (data.get("summaryDetail") or {}).get("trailingPE")
+            or (data.get("defaultKeyStatistics") or {}).get("trailingPE")
+            or (data.get("price") or {}).get("trailingPE")
+        )
+    )
+    forward_pe = _normalize_pe(
+        _extract_raw_number(
+            (data.get("summaryDetail") or {}).get("forwardPE")
+            or (data.get("defaultKeyStatistics") or {}).get("forwardPE")
+            or (data.get("price") or {}).get("forwardPE")
+        )
+    )
+
+    market_cap = _extract_raw_number((data.get("summaryDetail") or {}).get("marketCap") or (data.get("price") or {}).get("marketCap"))
+
+    asset_profile = data.get("assetProfile") or {}
+    sector = asset_profile.get("sector")
+    industry = asset_profile.get("industry")
+
+    currency = None
+    try:
+        price = data.get("price") or {}
+        currency = price.get("currency") or price.get("currencySymbol")
+    except Exception:
+        currency = None
+
+    out = {
+        "ticker": ticker,
+        "trailingPE": trailing_pe,
+        "forwardPE": forward_pe,
+        "marketCap": market_cap,
+        "sector": sector,
+        "industry": industry,
+        "currency": currency,
+    }
+    return out
 
 
 def download_daily(tickers: list[str], days: int = 5):
@@ -148,6 +233,14 @@ def get_fundamentals(ticker: str) -> dict:
     cached = _get_cached(key)
     if cached is not None:
         return cached
+
+    provider = (os.getenv("FUNDAMENTALS_PROVIDER") or "yfinance").strip().lower()
+    if provider in ("rapidapi", "rapidapi_yahoo", "rapidapi_yahoo_finance"):
+        rapid = _fundamentals_rapidapi_yahoo(ticker)
+        if rapid and (rapid.get("trailingPE") is not None or rapid.get("forwardPE") is not None):
+            # Cache longer to reduce paid API calls.
+            _set_cached(key, rapid, ttl_seconds=3600)
+            return rapid
 
     t = yf.Ticker(ticker)
     info: dict = {}
