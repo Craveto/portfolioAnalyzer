@@ -1,0 +1,159 @@
+.chartWrap {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.chartRow {
+  display: grid;
+  grid-template-columns: 1fr 3fr 0.7fr;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+@media (max-width: 700px) {
+  .chartRow {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+}
+
+.chartBar {
+  height: 14px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.25);
+  overflow: hidden;
+}
+
+.chartFill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(48, 209, 88, 0.75), rgba(124, 92, 255, 0.95));
+}
+
+.chartVal {
+  justify-self: end;
+}
+
+.vbarWrap {
+  margin-top: 10px;
+  overflow-x: auto;
+  padding-bottom: 6px;
+}
+
+.vbarGrid {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 56px;
+  gap: 10px;
+  align-items: end;
+  justify-content: start;
+  min-height: 330px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.vbarCol {
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+}
+
+.vbarTrack {
+  width: 100%;
+  height: 280px;
+  display: flex;
+  align-items: flex-end;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  overflow: hidden;
+}
+
+.vbarFill {
+  width: 100%;
+  border-radius: 10px 10px 0 0;
+  background: linear-gradient(180deg, rgba(124, 92, 255, 0.95), rgba(48, 209, 88, 0.55));
+}
+
+.vbarFillDiscount {
+  background: linear-gradient(180deg, rgba(255, 77, 109, 0.92), rgba(124, 92, 255, 0.55));
+}
+
+.vbarLabel {
+  font-size: 12px;
+  color: rgba(232, 238, 252, 0.9);
+  text-align: center;
+  max-width: 56px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vbarValue {
+  font-size: 12px;
+  color: rgba(232, 238, 252, 0.7);
+}
+
+.histWrap {
+  margin-top: 10px;
+}
+
+.histSvg {
+  width: 100%;
+  height: 240px;
+  display: block;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.histAxis {
+  stroke: rgba(255, 255, 255, 0.18);
+  stroke-width: 1;
+}
+
+.histAxisArrow {
+  fill: rgba(255, 255, 255, 0.28);
+}
+
+.histAxisLabel {
+  fill: rgba(232, 238, 252, 0.85);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.histTick {
+  fill: rgba(232, 238, 252, 0.7);
+  font-size: 11px;
+}
+
+.histGrid {
+  stroke: rgba(255, 255, 255, 0.08);
+  stroke-width: 1;
+}
+
+.histBar {
+  fill: rgba(124, 92, 255, 0.55);
+  stroke: rgba(255, 255, 255, 0.18);
+  stroke-width: 1;
+  transition: fill 120ms ease, transform 120ms ease;
+  transform-origin: center;
+}
+
+.histBar.active {
+  fill: rgba(48, 209, 88, 0.6);
+}
+
+.histLegend {
+  display: grid;
+  gap: 4px;
+  margin-top: 8px;
+}

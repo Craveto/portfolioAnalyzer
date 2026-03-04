@@ -1,0 +1,12 @@
+Django>=5.0,<6.0
+djangorestframework>=3.15,<4.0
+django-cors-headers>=4.3,<5.0
+
+# SQL Server
+mssql-django>=1.5,<2.0
+pyodbc>=5.0,<6.0
+
+# Market data + EDA
+yfinance>=0.2.40
+pandas>=2.1
+numpy>=1.26

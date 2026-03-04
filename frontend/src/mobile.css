@@ -1,0 +1,178 @@
+/* Mobile-only overrides (loaded globally, applied via media queries) */
+
+@media (max-width: 900px) {
+  .page {
+    padding: clamp(14px, 3.5vw, 18px);
+  }
+
+  /* space for bottom tabs */
+  .page {
+    padding-bottom: calc(clamp(14px, 3.5vw, 18px) + 72px + env(safe-area-inset-bottom));
+  }
+
+  .header {
+    padding: 10px 10px;
+    gap: 12px;
+  }
+
+  .brandSub {
+    display: none;
+  }
+
+  .brandTitle {
+    font-size: 14px;
+  }
+
+  .navActions {
+    gap: 8px;
+  }
+
+  .themeBtn,
+  .navBurger {
+    width: 42px;
+    height: 42px;
+  }
+}
+
+@media (max-width: 860px) {
+  .mobileTabsBar {
+    position: fixed;
+    left: 12px;
+    right: 12px;
+    bottom: max(12px, env(safe-area-inset-bottom));
+    z-index: 950;
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 10px;
+    padding: 10px;
+    border-radius: 20px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: rgba(15, 18, 32, 0.72);
+    backdrop-filter: blur(14px);
+    box-shadow: 0 16px 60px rgba(0, 0, 0, 0.35);
+  }
+
+  .mobileTab {
+    border-radius: 16px;
+    padding: 10px 8px;
+  }
+
+  .navMobileBackdrop {
+    place-items: end center;
+    padding: 0;
+  }
+
+  .navMobile {
+    width: 100%;
+    max-width: 560px;
+    border-radius: 22px 22px 0 0;
+    padding: 14px 14px max(14px, env(safe-area-inset-bottom)) 14px;
+    max-height: min(78svh, 720px);
+    overflow: hidden;
+    animation: sheetUp 220ms ease-out both;
+  }
+
+  .navMobileActions {
+    padding-bottom: 4px;
+  }
+}
+
+@media (max-width: 720px) {
+  .landingHero {
+    padding: 16px;
+  }
+
+  .landingHeroGrid {
+    gap: 14px;
+  }
+
+  .landingH1 {
+    font-size: 34px;
+    letter-spacing: -0.5px;
+  }
+
+  .landingLead {
+    font-size: 13px;
+  }
+
+  .heroActions {
+    gap: 10px;
+  }
+
+  .heroActions .btn {
+    flex: 1 1 auto;
+  }
+
+  .landingSectionHead {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+
+  .landingFeatureGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .landingSteps {
+    grid-template-columns: 1fr;
+  }
+
+  .landingFooterCta {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+@media (max-width: 520px) {
+  .logo {
+    width: 36px;
+    height: 36px;
+    border-radius: 12px;
+  }
+
+  .landingH1 {
+    font-size: 30px;
+    line-height: 1.06;
+  }
+
+  .landingHighlights {
+    grid-template-columns: 1fr;
+  }
+
+  .row {
+    padding: 10px 10px;
+    gap: 8px;
+  }
+
+  .table {
+    border-radius: 12px;
+  }
+
+  .holdingsTable {
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .modalBackdrop {
+    padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom))
+      max(12px, env(safe-area-inset-left));
+  }
+
+  .modal {
+    width: min(420px, 100%);
+    max-height: min(92svh, 760px);
+    overflow: auto;
+    border-radius: 16px;
+  }
+
+  .navMobile {
+    width: 100%;
+  }
+
+  .popoverCard {
+    width: min(520px, calc(100vw - 16px));
+  }
+
+  .popoverBody {
+    max-height: min(70svh, 560px);
+  }
+}
