@@ -40,3 +40,5 @@ Watching for file changes with StatReloader
 [04/Mar/2026 15:23:55] "GET /api/analysis/portfolio/7/pe/ HTTP/1.1" 200 1794
 [04/Mar/2026 15:24:14] "GET /api/market/summary/ HTTP/1.1" 200 1083
 [04/Mar/2026 15:24:15] "GET /api/market/summary/ HTTP/1.1" 200 1083
+E:\Bizmetric\Trae\PortFolioAnalyzer\backend\edaapp\settings.py changed, reloading.
+Watching for file changes with StatReloader
