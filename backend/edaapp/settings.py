@@ -2,8 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-
-import dj_database_url
+from typing import Final
 
 try:
     from dotenv import load_dotenv  # type: ignore
@@ -20,6 +19,17 @@ SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "dev-unsafe-secret-key")
 DEBUG = os.getenv("DJANGO_DEBUG", "1") == "1"
 
 ALLOWED_HOSTS = [h.strip() for h in os.getenv("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",") if h.strip()]
+
+
+def _module_available(mod: str) -> bool:
+    try:
+        __import__(mod)
+        return True
+    except Exception:
+        return False
+
+
+WHITENOISE_AVAILABLE: Final[bool] = _module_available("whitenoise")
 
 
 INSTALLED_APPS = [
@@ -42,7 +52,12 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
-    "whitenoise.middleware.WhiteNoiseMiddleware",
+    # WhiteNoise is recommended for production static files; keep optional for dev.
+    *(
+        ["whitenoise.middleware.WhiteNoiseMiddleware"]
+        if WHITENOISE_AVAILABLE
+        else []
+    ),
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -76,7 +91,12 @@ DATABASE_URL = (os.getenv("DATABASE_URL") or "").strip()
 DB_ENGINE = os.getenv("DB_ENGINE", "sqlite").lower()
 
 if DATABASE_URL:
-    DATABASES = {"default": dj_database_url.parse(DATABASE_URL, conn_max_age=60, ssl_require=True)}
+    try:
+        import dj_database_url  # type: ignore
+
+        DATABASES = {"default": dj_database_url.parse(DATABASE_URL, conn_max_age=60, ssl_require=True)}
+    except Exception as e:
+        raise RuntimeError("DATABASE_URL is set but 'dj-database-url' is not installed.") from e
 elif DB_ENGINE == "mssql":
     DATABASES = {
         "default": {
@@ -118,10 +138,16 @@ USE_TZ = True
 STATIC_URL = "static/"
 # Render/collectstatic expects a filesystem path (string is safest across envs).
 STATIC_ROOT = os.getenv("DJANGO_STATIC_ROOT", str(BASE_DIR / "staticfiles"))
-STORAGES = {
-    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
-    "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
-}
+if WHITENOISE_AVAILABLE:
+    STORAGES = {
+        "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+        "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
+    }
+else:
+    STORAGES = {
+        "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+        "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+    }
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 
@@ -133,6 +159,12 @@ CORS_ALLOWED_ORIGINS = [
     ).split(",")
     if o.strip()
 ]
+
+# Local dev convenience: if DEBUG is on, allow all origins so the UI never
+# gets blocked by stale env/processes or origin mismatches during demos.
+# (Token auth uses headers, not cookies, so this is safe for local dev.)
+if DEBUG:
+    CORS_ALLOW_ALL_ORIGINS = True
 
 CSRF_TRUSTED_ORIGINS = [
     o.strip()

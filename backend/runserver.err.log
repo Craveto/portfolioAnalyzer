@@ -1,0 +1,42 @@
+Watching for file changes with StatReloader
+[04/Mar/2026 14:59:12] "OPTIONS /api/market/summary/ HTTP/1.1" 200 0
+[04/Mar/2026 15:01:28] "GET /api/market/summary/ HTTP/1.1" 200 7751
+[04/Mar/2026 15:01:28] "GET /static/rest_framework/js/load-ajax-form.js HTTP/1.1" 200 59
+[04/Mar/2026 15:01:28] "GET /static/rest_framework/css/bootstrap-tweaks.css HTTP/1.1" 200 3426
+[04/Mar/2026 15:01:28] "GET /static/rest_framework/js/ajax-form.js HTTP/1.1" 200 3796
+[04/Mar/2026 15:01:28] "GET /static/rest_framework/js/csrf.js HTTP/1.1" 200 1793
+[04/Mar/2026 15:01:28] "GET /static/rest_framework/css/default.css HTTP/1.1" 200 1152
+[04/Mar/2026 15:01:28] "GET /static/rest_framework/css/prettify.css HTTP/1.1" 200 817
+[04/Mar/2026 15:01:28] "GET /static/rest_framework/js/prettify-min.js HTTP/1.1" 200 13632
+[04/Mar/2026 15:01:28] "GET /static/rest_framework/js/default.js HTTP/1.1" 200 1268
+[04/Mar/2026 15:01:28] "GET /static/rest_framework/js/jquery-3.7.1.min.js HTTP/1.1" 200 87533
+[04/Mar/2026 15:01:28] "GET /static/rest_framework/js/bootstrap.min.js HTTP/1.1" 200 39680
+[04/Mar/2026 15:01:28] "GET /static/rest_framework/css/bootstrap.min.css HTTP/1.1" 200 121457
+[04/Mar/2026 15:01:28] "GET /static/rest_framework/img/grid.png HTTP/1.1" 200 1458
+[04/Mar/2026 15:01:28] "GET /favicon.ico HTTP/1.1" 204 0
+[04/Mar/2026 15:01:33] "OPTIONS /api/market/summary/ HTTP/1.1" 200 0
+[04/Mar/2026 15:01:33] "OPTIONS /api/market/summary/ HTTP/1.1" 200 0
+E:\Bizmetric\Trae\PortFolioAnalyzer\backend\edaapp\settings.py changed, reloading.
+Watching for file changes with StatReloader
+[04/Mar/2026 15:06:12] "OPTIONS /api/market/summary/ HTTP/1.1" 200 0
+[04/Mar/2026 15:06:12] "OPTIONS /api/market/summary/ HTTP/1.1" 200 0
+[04/Mar/2026 15:06:18] "OPTIONS /api/market/summary/ HTTP/1.1" 200 0
+[04/Mar/2026 15:06:18] "OPTIONS /api/market/summary/ HTTP/1.1" 200 0
+[04/Mar/2026 15:06:55] "OPTIONS /api/market/summary/ HTTP/1.1" 200 0
+[04/Mar/2026 15:06:55] "OPTIONS /api/market/summary/ HTTP/1.1" 200 0
+[04/Mar/2026 15:07:25] "OPTIONS /api/market/summary/ HTTP/1.1" 200 0
+[04/Mar/2026 15:07:25] "OPTIONS /api/market/summary/ HTTP/1.1" 200 0
+E:\Bizmetric\Trae\PortFolioAnalyzer\backend\edaapp\settings.py changed, reloading.
+Watching for file changes with StatReloader
+E:\Bizmetric\Trae\PortFolioAnalyzer\backend\api\yf_client.py changed, reloading.
+Watching for file changes with StatReloader
+[04/Mar/2026 15:23:42] "GET /api/portfolios/7/transactions/ HTTP/1.1" 200 1448
+[04/Mar/2026 15:23:42] "GET /api/portfolios/7/transactions/ HTTP/1.1" 200 1448
+[04/Mar/2026 15:23:53] "GET /api/market/summary/ HTTP/1.1" 200 1083
+[04/Mar/2026 15:23:53] "GET /api/portfolios/7/ HTTP/1.1" 200 1498
+[04/Mar/2026 15:23:53] "GET /api/market/summary/ HTTP/1.1" 200 1083
+[04/Mar/2026 15:23:53] "GET /api/portfolios/7/ HTTP/1.1" 200 1498
+[04/Mar/2026 15:23:55] "GET /api/analysis/portfolio/7/pe/ HTTP/1.1" 200 1794
+[04/Mar/2026 15:23:55] "GET /api/analysis/portfolio/7/pe/ HTTP/1.1" 200 1794
+[04/Mar/2026 15:24:14] "GET /api/market/summary/ HTTP/1.1" 200 1083
+[04/Mar/2026 15:24:15] "GET /api/market/summary/ HTTP/1.1" 200 1083

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import time
 from dataclasses import dataclass
 
@@ -27,6 +28,23 @@ def _get_cached(key: str):
 
 def _set_cached(key: str, value: object, ttl_seconds: int) -> None:
     _cache[key] = CacheEntry(expires_at=time.time() + ttl_seconds, value=value)
+
+def _to_float(v):
+    try:
+        f = float(v)
+        return f if math.isfinite(f) else None
+    except Exception:
+        return None
+
+
+def _normalize_pe(v):
+    f = _to_float(v)
+    if f is None:
+        return None
+    # yfinance/Yahoo sometimes returns 0 for missing; treat as unknown.
+    if abs(f) < 1e-12:
+        return None
+    return f
 
 
 def download_daily(tickers: list[str], days: int = 5):
@@ -132,23 +150,61 @@ def get_fundamentals(ticker: str) -> dict:
         return cached
 
     t = yf.Ticker(ticker)
-    info = {}
+    info: dict = {}
     try:
-        info = t.info or {}
+        # Newer yfinance prefers get_info(); keep backwards compatible.
+        get_info = getattr(t, "get_info", None)
+        if callable(get_info):
+            info = get_info() or {}
+        else:
+            info = t.info or {}
     except Exception:
         info = {}
 
+    # Try a second time via the other method if we got nothing (transient failures happen).
+    if not info:
+        try:
+            get_info = getattr(t, "get_info", None)
+            if not callable(get_info):
+                info = getattr(t, "info", None) or {}
+            else:
+                info = t.info or {}
+        except Exception:
+            info = {}
+
+    trailing_pe = _normalize_pe(
+        info.get("trailingPE")
+        or info.get("trailingPe")
+        or info.get("priceToEarnings")
+        or info.get("peRatio")
+    )
+    forward_pe = _normalize_pe(info.get("forwardPE") or info.get("forwardPe"))
+
+    # Fallback: compute from price / EPS if possible.
+    if trailing_pe is None and forward_pe is None:
+        price = _to_float(info.get("currentPrice") or info.get("regularMarketPrice"))
+        if price is None:
+            try:
+                price = _to_float(get_fast_quote(ticker).get("last_price"))
+            except Exception:
+                price = None
+        eps = _to_float(info.get("trailingEps") or info.get("epsTrailingTwelveMonths") or info.get("epsTTM"))
+        if price is not None and eps is not None and eps != 0:
+            trailing_pe = _normalize_pe(price / eps)
+
     fundamentals = {
         "ticker": ticker,
-        "trailingPE": info.get("trailingPE"),
-        "forwardPE": info.get("forwardPE"),
+        "trailingPE": trailing_pe,
+        "forwardPE": forward_pe,
         "marketCap": info.get("marketCap"),
         "sector": info.get("sector"),
         "industry": info.get("industry"),
         "currency": info.get("currency"),
     }
 
-    _set_cached(key, fundamentals, ttl_seconds=300)
+    # Cache shorter when info is missing to avoid "sticky" zeros/nulls during transient Yahoo issues.
+    ttl = 300 if (info and (trailing_pe is not None or forward_pe is not None)) else 60
+    _set_cached(key, fundamentals, ttl_seconds=ttl)
     return fundamentals
 
 
