@@ -12,38 +12,78 @@ export function clearTokens() {
   localStorage.removeItem("authToken");
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function apiFetch(path, { method = "GET", body, auth = false } = {}) {
   const headers = { "Content-Type": "application/json" };
   if (auth) {
     const token = getToken();
     if (token) headers.Authorization = `Token ${token}`;
   }
-  const res = await fetch(`${API_BASE}${path}`, {
-    method,
-    headers,
-    body: body ? JSON.stringify(body) : undefined
-  });
-  const text = await res.text();
-  const data = text ? JSON.parse(text) : null;
-  if (!res.ok) {
-    const msg = (() => {
-      if (!data) return `HTTP ${res.status}`;
-      if (typeof data === "string") return data;
-      if (typeof data === "object") {
-        if (data.detail) return String(data.detail);
-        if (data.message) return String(data.message);
-        const entries = Object.entries(data);
-        if (entries.length) {
-          const [k, v] = entries[0];
-          if (Array.isArray(v) && v.length) return `${k}: ${String(v[0])}`;
-          return `${k}: ${String(v)}`;
+
+  const url = `${API_BASE}${path}`;
+  const isGet = String(method).toUpperCase() === "GET";
+  const maxAttempts = isGet ? 3 : 1;
+
+  let lastErr = null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const res = await fetch(url, {
+        method,
+        headers,
+        body: body ? JSON.stringify(body) : undefined
+      });
+
+      const text = await res.text();
+      let data = null;
+      if (text) {
+        try {
+          data = JSON.parse(text);
+        } catch {
+          data = text;
         }
       }
-      return `HTTP ${res.status}`;
-    })();
-    throw new Error(msg);
+
+      // Retry transient upstream errors on GET (Render cold start / yfinance hiccups).
+      if (isGet && !res.ok && [502, 503, 504].includes(res.status) && attempt < maxAttempts) {
+        await sleep(350 * attempt * attempt);
+        continue;
+      }
+
+      if (!res.ok) {
+        const msg = (() => {
+          if (!data) return `HTTP ${res.status}`;
+          if (typeof data === "string") return data;
+          if (typeof data === "object") {
+            if (data.detail) return String(data.detail);
+            if (data.message) return String(data.message);
+            const entries = Object.entries(data);
+            if (entries.length) {
+              const [k, v] = entries[0];
+              if (Array.isArray(v) && v.length) return `${k}: ${String(v[0])}`;
+              return `${k}: ${String(v)}`;
+            }
+          }
+          return `HTTP ${res.status}`;
+        })();
+        throw new Error(msg);
+      }
+
+      return data;
+    } catch (e) {
+      lastErr = e;
+      // Network error / cold start: retry only for GET.
+      if (isGet && attempt < maxAttempts) {
+        await sleep(350 * attempt * attempt);
+        continue;
+      }
+      throw e;
+    }
   }
-  return data;
+
+  throw lastErr || new Error("Request failed");
 }
 
 export const api = {
