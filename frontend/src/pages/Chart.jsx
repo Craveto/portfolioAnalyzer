@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, clearTokens } from "../api.js";
 import NavBar from "../components/NavBar.jsx";
+import Footer from "../components/Footer.jsx";
 
 function fmt(n) {
   if (n === null || n === undefined) return "--";
@@ -121,6 +122,7 @@ export default function Chart() {
           </div>
         </section>
       </main>
+      <Footer />
     </div>
   );
 }

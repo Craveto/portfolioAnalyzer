@@ -90,6 +90,15 @@ export const api = {
   marketSummary() {
     return apiFetch("/api/market/summary/");
   },
+  metalsSummary(days = 7) {
+    return apiFetch(`/api/market/metals/summary/?days=${encodeURIComponent(String(days))}`);
+  },
+  metalsNews(limit = 6) {
+    return apiFetch(`/api/market/metals/news/?limit=${encodeURIComponent(String(limit))}`);
+  },
+  metalsQuote(ttl = 20) {
+    return apiFetch(`/api/market/metals/quote/?ttl=${encodeURIComponent(String(ttl))}`);
+  },
   quote(symbol) {
     return apiFetch(`/api/market/quote/?symbol=${encodeURIComponent(symbol)}`);
   },

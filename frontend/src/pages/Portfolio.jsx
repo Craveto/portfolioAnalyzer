@@ -5,6 +5,7 @@ import LineChart from "../components/LineChart.jsx";
 import ScatterPlot from "../components/ScatterPlot.jsx";
 import Popover from "../components/Popover.jsx";
 import NavBar from "../components/NavBar.jsx";
+import Footer from "../components/Footer.jsx";
 
 function toNum(v) {
   const n = Number(v);
@@ -600,6 +601,8 @@ export default function Portfolio() {
           )}
         </section>
       </main>
+
+      <Footer />
 
       {tradeOpen ? (
         <div className="modalBackdrop" onClick={() => setTradeOpen(false)} role="presentation">

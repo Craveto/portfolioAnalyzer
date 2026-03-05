@@ -330,3 +330,308 @@ def get_52w_range(ticker: str) -> dict:
     out = {"ticker": ticker, "low_52w": low, "high_52w": high}
     _set_cached(key, out, ttl_seconds=600)
     return out
+
+
+def history_last_days(ticker: str, days: int = 7) -> list[dict]:
+    """
+    Small daily close series for quick UI widgets.
+    Returns list of {"date": "YYYY-MM-DD", "close": float}.
+    """
+    days = max(3, min(30, int(days or 7)))
+    key = f"hist:last:{days}:{ticker}"
+    cached = _get_cached(key)
+    if cached is not None:
+        return cached
+
+    t = yf.Ticker(ticker)
+    out: list[dict] = []
+    try:
+        # Fetch a bit more than needed to cover non-trading days.
+        df = t.history(period=f"{max(days + 5, 10)}d", interval="1d")
+        closes = df.get("Close") if df is not None else None
+        if closes is not None:
+            s = closes.dropna()
+            if len(s) >= 1:
+                tail = s.tail(days)
+                for idx, val in tail.items():
+                    try:
+                        d = getattr(idx, "date", None)
+                        if callable(d):
+                            ds = idx.date().isoformat()
+                        else:
+                            ds = str(idx)[:10]
+                        out.append({"date": ds, "close": float(val)})
+                    except Exception:
+                        continue
+    except Exception:
+        out = []
+
+    _set_cached(key, out, ttl_seconds=60)
+    return out
+
+
+def metals_summary(days: int = 7) -> dict:
+    """
+    Gold/Silver widget payload (fast, cached):
+    - Last + prev close for gold & silver
+    - 7d aligned close series
+    - Simple metrics: corr, ratio, 7d returns
+    """
+    days = max(3, min(14, int(days or 7)))
+    key = f"metals:summary:{days}"
+    cached = _get_cached(key)
+    if cached is not None:
+        return cached
+
+    # Prefer spot FX tickers; fall back to futures if needed (spot can be empty on some hosts).
+    gold_t = os.getenv("METALS_GOLD_TICKER", "XAUUSD=X").strip() or "XAUUSD=X"
+    silver_t = os.getenv("METALS_SILVER_TICKER", "XAGUSD=X").strip() or "XAGUSD=X"
+    gold_fallback = os.getenv("METALS_GOLD_FALLBACK", "GC=F").strip() or "GC=F"
+    silver_fallback = os.getenv("METALS_SILVER_FALLBACK", "SI=F").strip() or "SI=F"
+
+    fetch_days = max(days + 7, 14)
+
+    def _download_pair(gt: str, st: str):
+        try:
+            return yf.download(
+                tickers=[gt, st],
+                period=f"{fetch_days}d",
+                interval="1d",
+                group_by="ticker",
+                auto_adjust=False,
+                progress=False,
+                threads=True,
+            )
+        except Exception:
+            return None
+
+    df = _download_pair(gold_t, silver_t)
+
+    def _close_series(sym: str):
+        try:
+            if df is None or getattr(df, "empty", False):
+                return []
+            if hasattr(df, "columns") and hasattr(df.columns, "get_level_values"):
+                # MultiIndex columns: (ticker, field)
+                if sym in df.columns.get_level_values(0):
+                    s = df[sym].get("Close")
+                else:
+                    s = None
+            else:
+                s = None
+            if s is None:
+                return []
+            s = s.dropna()
+            out = []
+            for idx, val in s.tail(days).items():
+                try:
+                    ds = idx.date().isoformat() if hasattr(idx, "date") else str(idx)[:10]
+                    out.append({"date": ds, "close": float(val)})
+                except Exception:
+                    continue
+            return out
+        except Exception:
+            return []
+
+    gold_series = _close_series(gold_t)
+    silver_series = _close_series(silver_t)
+
+    # Fallback if spot tickers return empty series.
+    used = {"gold": gold_t, "silver": silver_t}
+    if (not gold_series or not silver_series) and (gold_fallback or silver_fallback):
+        df = _download_pair(gold_fallback, silver_fallback)
+        gold_series_fb = _close_series(gold_fallback)
+        silver_series_fb = _close_series(silver_fallback)
+        if gold_series_fb and silver_series_fb:
+            gold_series = gold_series_fb
+            silver_series = silver_series_fb
+            used = {"gold": gold_fallback, "silver": silver_fallback}
+
+    # Align by date
+    gmap = {p["date"]: p.get("close") for p in gold_series}
+    smap = {p["date"]: p.get("close") for p in silver_series}
+    dates = sorted(set(gmap.keys()) & set(smap.keys()))
+    series = []
+    gvals = []
+    svals = []
+    for d in dates:
+        gv = gmap.get(d)
+        sv = smap.get(d)
+        if gv is None or sv is None:
+            continue
+        series.append({"date": d, "gold": float(gv), "silver": float(sv)})
+        gvals.append(float(gv))
+        svals.append(float(sv))
+
+    def pct_change(vals: list[float]):
+        if len(vals) < 2:
+            return None
+        a = vals[0]
+        b = vals[-1]
+        if not a:
+            return None
+        return ((b - a) / a) * 100.0
+
+    def quote_from_vals(sym: str, vals: list[float]):
+        last = vals[-1] if len(vals) >= 1 else None
+        prev = vals[-2] if len(vals) >= 2 else None
+        return {"ticker": sym, "last_price": last, "previous_close": prev, "currency": None, "time_zone": None}
+
+    gold_q = quote_from_vals(gold_t, gvals)
+    silver_q = quote_from_vals(silver_t, svals)
+
+    corr = None
+    try:
+        if len(gvals) >= 3 and len(svals) == len(gvals):
+            gm = sum(gvals) / len(gvals)
+            sm = sum(svals) / len(svals)
+            num = sum((g - gm) * (s - sm) for g, s in zip(gvals, svals))
+            den1 = sum((g - gm) ** 2 for g in gvals) ** 0.5
+            den2 = sum((s - sm) ** 2 for s in svals) ** 0.5
+            if den1 and den2:
+                corr = num / (den1 * den2)
+    except Exception:
+        corr = None
+
+    ratio = None
+    try:
+        gl = gold_q.get("last_price")
+        sl = silver_q.get("last_price")
+        if gl is not None and sl:
+            ratio = float(gl) / float(sl)
+    except Exception:
+        ratio = None
+
+    payload = {
+        "tickers": used,
+        "requested_tickers": {"gold": gold_t, "silver": silver_t},
+        "gold": gold_q,
+        "silver": silver_q,
+        "series": series,
+        "metrics": {
+            "corr_7d": corr,
+            "gold_silver_ratio": ratio,
+            "gold_7d_return_pct": pct_change(gvals) if gvals else None,
+            "silver_7d_return_pct": pct_change(svals) if svals else None,
+        },
+        "available": bool(series) and (gold_q.get("last_price") is not None or silver_q.get("last_price") is not None),
+        "note": "Metals are best-effort quotes (cached). Educational only.",
+    }
+
+    _set_cached(key, payload, ttl_seconds=60)
+    return payload
+
+
+def metals_quote_fast(ttl_seconds: int = 20) -> dict:
+    """
+    Very small payload for polling (fast UI updates).
+    Returns last + previous close for gold/silver only.
+    Cached aggressively to avoid hammering yfinance.
+    """
+    ttl_seconds = max(10, min(60, int(ttl_seconds or 20)))
+    key = f"metals:quote:{ttl_seconds}"
+    cached = _get_cached(key)
+    if cached is not None:
+        return cached
+
+    gold_t = os.getenv("METALS_GOLD_TICKER", "XAUUSD=X").strip() or "XAUUSD=X"
+    silver_t = os.getenv("METALS_SILVER_TICKER", "XAGUSD=X").strip() or "XAGUSD=X"
+    gold_fallback = os.getenv("METALS_GOLD_FALLBACK", "GC=F").strip() or "GC=F"
+    silver_fallback = os.getenv("METALS_SILVER_FALLBACK", "SI=F").strip() or "SI=F"
+
+    def _download_pair(gt: str, st: str):
+        try:
+            return yf.download(
+                tickers=[gt, st],
+                period="10d",
+                interval="1d",
+                group_by="ticker",
+                auto_adjust=False,
+                progress=False,
+                threads=True,
+            )
+        except Exception:
+            return None
+
+    df = _download_pair(gold_t, silver_t)
+
+    def last_prev(sym: str):
+        try:
+            if df is None or getattr(df, "empty", False):
+                return {"ticker": sym, "last_price": None, "previous_close": None}
+            if sym not in df.columns.get_level_values(0):
+                return {"ticker": sym, "last_price": None, "previous_close": None}
+            s = df[sym].get("Close")
+            if s is None:
+                return {"ticker": sym, "last_price": None, "previous_close": None}
+            s = s.dropna()
+            last = float(s.iloc[-1]) if len(s) >= 1 else None
+            prev = float(s.iloc[-2]) if len(s) >= 2 else None
+            return {"ticker": sym, "last_price": last, "previous_close": prev}
+        except Exception:
+            return {"ticker": sym, "last_price": None, "previous_close": None}
+
+    out = {"gold": last_prev(gold_t), "silver": last_prev(silver_t), "cached_for_s": ttl_seconds, "tickers": {"gold": gold_t, "silver": silver_t}}
+    if (out["gold"]["last_price"] is None or out["silver"]["last_price"] is None) and (gold_fallback or silver_fallback):
+        df = _download_pair(gold_fallback, silver_fallback)
+        out = {
+            "gold": last_prev(gold_fallback),
+            "silver": last_prev(silver_fallback),
+            "cached_for_s": ttl_seconds,
+            "tickers": {"gold": gold_fallback, "silver": silver_fallback},
+            "requested_tickers": {"gold": gold_t, "silver": silver_t},
+        }
+    _set_cached(key, out, ttl_seconds=ttl_seconds)
+    return out
+
+
+def metals_news(limit: int = 6) -> list[dict]:
+    """
+    Best-effort metals news via yfinance Ticker.news.
+    Cached longer to keep landing fast.
+    """
+    limit = max(3, min(12, int(limit or 6)))
+    key = f"metals:news:{limit}"
+    cached = _get_cached(key)
+    if cached is not None:
+        return cached
+
+    gold_t = os.getenv("METALS_GOLD_TICKER", "XAUUSD=X").strip() or "XAUUSD=X"
+    silver_t = os.getenv("METALS_SILVER_TICKER", "XAGUSD=X").strip() or "XAGUSD=X"
+
+    items: list[dict] = []
+    for sym in (gold_t, silver_t):
+        try:
+            t = yf.Ticker(sym)
+            news = getattr(t, "news", None) or []
+            for n in news:
+                title = n.get("title") or ""
+                link = n.get("link") or n.get("url") or ""
+                if not title or not link:
+                    continue
+                items.append(
+                    {
+                        "title": title,
+                        "publisher": n.get("publisher") or "",
+                        "link": link,
+                        "published_at": n.get("providerPublishTime"),
+                        "source": sym,
+                    }
+                )
+        except Exception:
+            continue
+
+    # De-dupe by title and sort by publish time (desc)
+    seen = set()
+    deduped = []
+    for it in sorted(items, key=lambda x: x.get("published_at") or 0, reverse=True):
+        t = it.get("title") or ""
+        if t in seen:
+            continue
+        seen.add(t)
+        deduped.append(it)
+        if len(deduped) >= limit:
+            break
+
+    _set_cached(key, deduped, ttl_seconds=600)
+    return deduped

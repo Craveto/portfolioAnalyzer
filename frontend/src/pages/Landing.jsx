@@ -3,6 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { api, getToken } from "../api.js";
 import LoginModal from "../components/LoginModal.jsx";
 import NavBar from "../components/NavBar.jsx";
+import Footer from "../components/Footer.jsx";
+import MetalsPanel from "../components/MetalsPanel.jsx";
 
 function formatNum(n) {
   if (n === null || n === undefined) return "--";
@@ -60,7 +62,7 @@ export default function Landing() {
       <NavBar
         className="landingHeader"
         title="Portfolio Analyzer"
-        subtitle="Django • React • SQL Server • yfinance"
+        subtitle="India's first EDA for retail investors"
         links={
           authed
             ? [
@@ -149,6 +151,10 @@ export default function Landing() {
         </section>
 
         <section className="landingSection">
+          <MetalsPanel />
+        </section>
+
+        <section className="landingSection">
           <div className="landingSectionHead">
             <h2 className="landingH2">What you can do</h2>
             <div className="muted small">Built to keep data light in SQL, heavy insights in UI.</div>
@@ -220,6 +226,8 @@ export default function Landing() {
           </div>
         </section>
       </main>
+
+      <Footer />
 
       <LoginModal
         open={loginOpen}

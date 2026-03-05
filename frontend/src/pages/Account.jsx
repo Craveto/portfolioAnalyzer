@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api, clearTokens } from "../api.js";
 import NavBar from "../components/NavBar.jsx";
+import Footer from "../components/Footer.jsx";
 
 export default function Account() {
   const nav = useNavigate();
@@ -563,6 +564,7 @@ export default function Account() {
           </div>
         </section>
       </main>
+      <Footer />
     </div>
   );
 }

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { api, clearTokens } from "../api.js";
 import { Link, useNavigate } from "react-router-dom";
 import NavBar from "../components/NavBar.jsx";
+import Footer from "../components/Footer.jsx";
 
 function fmt(n) {
   if (n === null || n === undefined) return "--";
@@ -323,6 +324,8 @@ export default function Dashboard() {
           {(summary?.recent_transactions || []).length === 0 ? <div className="muted" style={{ marginTop: 10 }}>No transactions yet.</div> : null}
         </section>
       </main>
+
+      <Footer />
 
       <InfoModal
         open={Boolean(infoKey)}

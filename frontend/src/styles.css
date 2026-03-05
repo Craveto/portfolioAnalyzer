@@ -126,6 +126,7 @@ a {
 @media (prefers-reduced-motion: no-preference) {
   .page {
     animation: pageIn 240ms ease-out both;
+    will-change: opacity;
   }
 }
 
@@ -806,11 +807,9 @@ a {
 @keyframes pageIn {
   from {
     opacity: 0;
-    transform: translateY(4px);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
   }
 }
 
@@ -1244,6 +1243,7 @@ a {
   font-size: 22px;
   font-weight: 800;
   margin-top: 6px;
+  color: white;
 }
 
 .table {
@@ -1787,4 +1787,372 @@ a {
   max-height: min(62vh, 520px);
   overflow: auto;
   padding-right: 4px;
+}
+
+/* Footer (premium fintech, low-noise) */
+.siteFooter {
+  margin-top: var(--gap);
+  padding: 18px;
+  border-radius: calc(var(--radius) + 6px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: linear-gradient(180deg, rgba(18, 22, 40, 0.78), rgba(14, 17, 32, 0.62));
+  backdrop-filter: blur(12px);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.28);
+  position: relative;
+  overflow: hidden;
+}
+
+.siteFooter::before {
+  content: "";
+  position: absolute;
+  inset: -40%;
+  pointer-events: none;
+  opacity: 0.6;
+  background: radial-gradient(420px 260px at 20% 30%, color-mix(in srgb, var(--accent1) 18%, transparent), transparent 60%),
+    radial-gradient(460px 280px at 85% 25%, color-mix(in srgb, var(--accent2) 12%, transparent), transparent 60%),
+    radial-gradient(520px 320px at 60% 95%, color-mix(in srgb, var(--accent3) 10%, transparent), transparent 62%);
+  filter: blur(24px);
+  mix-blend-mode: screen;
+}
+
+.footerTop {
+  position: relative;
+  z-index: 1;
+}
+
+.footerBrand {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.footerLogo {
+  width: 44px;
+  height: 44px;
+  border-radius: 16px;
+  display: grid;
+  place-items: center;
+  font-weight: 900;
+  letter-spacing: -0.3px;
+  color: white;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent1) 70%, #111), color-mix(in srgb, var(--accent2) 35%, #111));
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.footerTitle {
+  font-weight: 900;
+  letter-spacing: -0.2px;
+}
+
+.footerSub {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.footerMeta {
+  margin-top: 8px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.footerBadge {
+  font-size: 11px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.footerBadge.soft {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.footerGrid {
+  display: grid;
+  grid-template-columns: 1.05fr 1fr 1fr 1.15fr;
+  gap: 14px;
+}
+
+.footerCol {
+  padding: 12px;
+  border-radius: var(--radiusSm);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.footerHead {
+  font-weight: 800;
+  font-size: 12px;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  color: rgba(232, 238, 252, 0.85);
+  margin-bottom: 10px;
+}
+
+.footerLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  margin: 2px 0;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  color: rgba(232, 238, 252, 0.86);
+  transition: transform 160ms ease, background 160ms ease, border-color 160ms ease;
+}
+
+.footerLink:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.12);
+  transform: translateY(-1px);
+}
+
+.footerText {
+  color: rgba(232, 238, 252, 0.72);
+  font-size: 12.5px;
+  line-height: 1.35;
+}
+
+.footerHint {
+  margin-top: 10px;
+  color: rgba(232, 238, 252, 0.62);
+  font-size: 12px;
+}
+
+.footerBottom {
+  position: relative;
+  z-index: 1;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.footerBottomRight {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 900px) {
+  .footerGrid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 520px) {
+  .siteFooter {
+    padding: 14px;
+  }
+  .footerGrid {
+    grid-template-columns: 1fr;
+  }
+  .footerCol {
+    padding: 10px;
+  }
+}
+
+/* Gold & Silver widget */
+.metalsCard {
+  padding: 18px;
+}
+
+.metalsHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.metalsBadges {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.metalsPill {
+  padding: 10px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.metalsPill.pos {
+  border-color: rgba(48, 209, 88, 0.35);
+  background: color-mix(in srgb, var(--pos) 10%, rgba(255, 255, 255, 0.04));
+}
+
+.metalsPill.neg {
+  border-color: rgba(255, 69, 58, 0.35);
+  background: color-mix(in srgb, var(--neg) 10%, rgba(255, 255, 255, 0.04));
+}
+
+.metalsGrid {
+  display: grid;
+  grid-template-columns: 1.05fr 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+.metalsPrices {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.metalsKpi {
+  position: relative;
+  overflow: hidden;
+}
+
+.metalsKpi::before {
+  content: "";
+  position: absolute;
+  inset: -40%;
+  pointer-events: none;
+  opacity: 0.35;
+  background: radial-gradient(380px 240px at 20% 25%, rgba(255, 210, 120, 0.14), transparent 60%),
+    radial-gradient(380px 240px at 85% 30%, rgba(160, 210, 255, 0.12), transparent 60%);
+  filter: blur(18px);
+  mix-blend-mode: screen;
+}
+
+.metalsTwo {
+  display: grid;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.metalsBox {
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: var(--radiusSm);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.metalsBullets {
+  margin: 10px 0 0;
+  padding-left: 18px;
+  color: rgba(232, 238, 252, 0.78);
+  line-height: 1.35;
+  font-size: 13px;
+}
+
+.metalsBullets li + li {
+  margin-top: 8px;
+}
+
+.metalsNews {
+  margin-top: 8px;
+  display: grid;
+  gap: 10px;
+}
+
+.metalsNewsItem {
+  display: block;
+  padding: 10px 10px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.03);
+  transition: transform 160ms ease, background 160ms ease, border-color 160ms ease;
+}
+
+.metalsNewsItem:hover {
+  transform: translateY(-1px);
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+.metalsChartCard {
+  padding: 14px;
+  border-radius: calc(var(--radius) - 4px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02));
+}
+
+.metalsChartHead {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: baseline;
+  margin-bottom: 10px;
+}
+
+.metalsSpark {
+  width: 100%;
+  height: auto;
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.10);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.metalsLegend {
+  margin-top: 10px;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  color: rgba(232, 238, 252, 0.75);
+  font-size: 12px;
+}
+
+.metalsKey {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  margin-right: 6px;
+}
+
+.metalsKey.gold {
+  background: rgba(255, 210, 120, 0.9);
+}
+
+.metalsKey.silver {
+  background: rgba(160, 210, 255, 0.9);
+}
+
+.metalsLoading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  border-radius: var(--radiusSm);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.metalsSpinner {
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  border: 2px solid rgba(255, 255, 255, 0.16);
+  border-top-color: color-mix(in srgb, var(--accent2) 60%, rgba(255, 255, 255, 0.2));
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 900px) {
+  .metalsGrid {
+    grid-template-columns: 1fr;
+  }
+  .metalsPrices {
+    grid-template-columns: 1fr;
+  }
 }

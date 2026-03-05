@@ -31,7 +31,7 @@ from .serializers import (
     WatchlistAddSerializer,
     WatchlistItemSerializer,
 )
-from .yf_client import download_daily, get_52w_range, get_fast_quote, get_fundamentals, search_indian_equities
+from .yf_client import download_daily, get_52w_range, get_fast_quote, get_fundamentals, metals_news, metals_quote_fast, metals_summary, search_indian_equities
 
 
 def _get_or_create_stock(symbol: str, name_hint: str | None = None) -> Stock:
@@ -698,3 +698,27 @@ class MarketSummaryView(APIView):
                 "note": "Top10 is computed from a fixed Nifty-like universe for Day-1 demo.",
             }
         )
+
+
+class MetalsSummaryView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        days = int(request.query_params.get("days", "7") or 7)
+        return Response(metals_summary(days=days))
+
+
+class MetalsNewsView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        limit = int(request.query_params.get("limit", "6") or 6)
+        return Response({"items": metals_news(limit=limit)})
+
+
+class MetalsQuoteView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        ttl = int(request.query_params.get("ttl", "20") or 20)
+        return Response(metals_quote_fast(ttl_seconds=ttl))

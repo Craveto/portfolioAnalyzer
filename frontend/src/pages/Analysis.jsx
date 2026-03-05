@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, clearTokens } from "../api.js";
 import LineChart from "../components/LineChart.jsx";
 import NavBar from "../components/NavBar.jsx";
+import Footer from "../components/Footer.jsx";
 
 function fmt(n) {
   if (n === null || n === undefined) return "--";
@@ -203,6 +204,7 @@ export default function Analysis() {
           </div>
         </section>
       </main>
+      <Footer />
     </div>
   );
 }
