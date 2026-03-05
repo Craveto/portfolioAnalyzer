@@ -1,8 +1,16 @@
-# PortFolioAnalyzer (EDA App)
+# Now you can see live this webapp on 
+https://portfolio-analyzer-wine.vercel.app/
+# PortFolioAnalyzer (EDA App) 
+<img width="1550" height="900" alt="image" src="https://github.com/user-attachments/assets/f4c68f1e-d387-4056-bf00-d886fb81855f" />
 
-Day-1 deliverable: a working Django (REST) + React app with login, portfolio CRUD, and live-ish Indian market data via `yfinance`.
 
-## What you can demo (Day 1)
+#
+A working Django (REST) + React app with login, portfolio CRUD, and currently this works for live-ish Indian market data via `yfinance`.
+In this webapp you can able to create demo portfolios and can predict the future oportunities and the insights of your portfolio.
+By this you can manage  your real portfolios for indian markets. 
+
+
+## What you can demo
 
 1) Landing page loads Nifty/Sensex + “Top 10 movers” (demo universe)  
 2) After ~5 seconds a Login/Signup modal appears  
