@@ -38,7 +38,7 @@ export default function LoginModal({ open, onClose, onAuthed }) {
         <div className="modalHeader">
           <h2>{title}</h2>
           <button className="btn ghost" onClick={onClose} aria-label="Close">
-            ×
+            x
           </button>
         </div>
 
@@ -66,13 +66,7 @@ export default function LoginModal({ open, onClose, onAuthed }) {
 
           <label className="label">
             Password
-            <input
-              className="input"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-            />
+            <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
           </label>
 
           {error ? <div className="error">{error}</div> : null}

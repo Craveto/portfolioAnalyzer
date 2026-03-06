@@ -24,7 +24,7 @@ function IntroSplash({ state, onDone }) {
         onClick={(e) => e.stopPropagation()}
       >
         <button className="splashClose" type="button" onClick={onDone} aria-label="Close">
-          ×
+          x
         </button>
         <div className="splashCenter">
           <div className="splashMark" aria-hidden="true">
@@ -53,7 +53,7 @@ function IntroSplash({ state, onDone }) {
 
 export default function App() {
   const didInit = useRef(false);
-  const [introState, setIntroState] = useState("enter"); // enter | exiting | hidden
+  const [introState, setIntroState] = useState("enter");
 
   useEffect(() => {
     if (didInit.current) return;
