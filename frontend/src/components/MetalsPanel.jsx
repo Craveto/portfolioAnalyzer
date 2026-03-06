@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { api } from "../api.js";
+import LineChart from "./LineChart.jsx";
 
 function fmt(n, digits = 2) {
   if (n === null || n === undefined) return "--";
@@ -126,6 +127,12 @@ export default function MetalsPanel() {
   const [newsBusy, setNewsBusy] = useState(false);
   const [liveQuote, setLiveQuote] = useState(null);
   const [err, setErr] = useState("");
+  const [horizon, setHorizon] = useState("1w");
+  const [forecast, setForecast] = useState(null);
+  const [forecastBusy, setForecastBusy] = useState(false);
+  const [forecastErr, setForecastErr] = useState("");
+  const [forecastOpen, setForecastOpen] = useState(false);
+  const [forecastCache, setForecastCache] = useState({});
 
   async function refreshSummary({ silent = false } = {}) {
     if (!silent) setBusy(true);
@@ -218,6 +225,45 @@ export default function MetalsPanel() {
     };
   }, [data]);
 
+  // Load forecast only when the modal is open (keeps landing fast).
+  useEffect(() => {
+    let alive = true;
+    if (!forecastOpen) return () => {};
+
+    const cached = forecastCache?.[horizon];
+    if (cached) {
+      setForecast(cached);
+      setForecastErr("");
+      setForecastBusy(false);
+      return () => {
+        alive = false;
+      };
+    }
+
+    setForecastErr("");
+    setForecastBusy(true);
+    api
+      .metalsForecast(horizon)
+      .then((d) => {
+        if (!alive) return;
+        setForecast(d);
+        setForecastCache((prev) => ({ ...(prev || {}), [horizon]: d }));
+      })
+      .catch((e) => {
+        if (!alive) return;
+        setForecastErr(e?.message || "Forecast unavailable");
+        setForecast(null);
+      })
+      .finally(() => {
+        if (!alive) return;
+        setForecastBusy(false);
+      });
+
+    return () => {
+      alive = false;
+    };
+  }, [forecastOpen, horizon, forecastCache]);
+
   const gold = liveQuote?.gold?.last_price !== undefined ? { ...data?.gold, ...liveQuote?.gold } : data?.gold;
   const silver = liveQuote?.silver?.last_price !== undefined ? { ...data?.silver, ...liveQuote?.silver } : data?.silver;
   const series = data?.series || [];
@@ -275,6 +321,116 @@ export default function MetalsPanel() {
   }, [corr, gold7, ratio, sil7]);
 
   const unavailable = !busy && (!data || data?.available === false);
+
+  const horizonLabel =
+    horizon === "1h" ? "Next 1 hour" : horizon === "1w" ? "Next 1 week" : horizon === "1m" ? "Next 1 month" : "Next 1 year";
+
+  const goldPred = forecast?.gold?.predicted_end ?? null;
+  const silverPred = forecast?.silver?.predicted_end ?? null;
+
+  const forecastPointsGold = useMemo(() => {
+    const s = forecast?.gold?.series || [];
+    if (!s.length) return [];
+    const last = s.length - 1;
+    return s.map((p, idx) => ({
+      x: String(p.t),
+      xLabel: idx === 0 ? "Now" : idx === last ? "End" : "",
+      y: p.base
+    }));
+  }, [forecast]);
+
+  const forecastPointsSilver = useMemo(() => {
+    const s = forecast?.silver?.series || [];
+    if (!s.length) return [];
+    const last = s.length - 1;
+    return s.map((p, idx) => ({
+      x: String(p.t),
+      xLabel: idx === 0 ? "Now" : idx === last ? "End" : "",
+      y: p.base
+    }));
+  }, [forecast]);
+
+  function ForecastModal() {
+    if (!forecastOpen) return null;
+    return (
+      <div className="modalBackdrop" role="dialog" aria-modal="true" onClick={() => setForecastOpen(false)}>
+        <div className="modal metalsForecastModal" onClick={(e) => e.stopPropagation()}>
+          <div className="modalHeader">
+            <div>
+              <h2 style={{ margin: 0 }}>Metals forecast</h2>
+              <div className="muted small" style={{ marginTop: 4 }}>
+                {horizonLabel} • Educational only
+              </div>
+            </div>
+            <button className="btn ghost" type="button" onClick={() => setForecastOpen(false)} aria-label="Close">
+              ×
+            </button>
+          </div>
+
+          <div className="metalsForecastModalHead">
+            <div className="metalsForecastKpis">
+              <div className="kpi metalsKpi">
+                <div className="kpiLabel">Gold predicted</div>
+                <div className="kpiValue">{fmt(goldPred)}</div>
+                <div className="muted small">USD</div>
+              </div>
+              <div className="kpi metalsKpi">
+                <div className="kpiLabel">Silver predicted</div>
+                <div className="kpiValue">{fmt(silverPred)}</div>
+                <div className="muted small">USD</div>
+              </div>
+            </div>
+
+            <label className="metalsSelect">
+              <div className="muted small" style={{ marginBottom: 6 }}>
+                Choose horizon
+              </div>
+              <select className="input" value={horizon} onChange={(e) => setHorizon(e.target.value)}>
+                <option value="1h">1 hour</option>
+                <option value="1w">1 week</option>
+                <option value="1m">1 month</option>
+                <option value="1y">1 year</option>
+              </select>
+            </label>
+          </div>
+
+          {forecastBusy ? (
+            <div className="metalsForecastLoading">
+              <div className="metalsSpinner" aria-hidden="true" /> <div className="muted small">Computing forecast…</div>
+            </div>
+          ) : null}
+          {forecastErr ? <div className="muted small" style={{ marginTop: 8 }}>{forecastErr}</div> : null}
+
+          <div className="metalsForecastCharts">
+            <div className="metalsMiniChart">
+              <div className="muted small" style={{ marginBottom: 6 }}>
+                Gold path
+              </div>
+              {forecastPointsGold.length ? (
+                <LineChart points={forecastPointsGold} height={220} xLabel="Horizon" yLabel="USD" />
+              ) : (
+                <div className="skeleton h200" />
+              )}
+            </div>
+            <div className="metalsMiniChart">
+              <div className="muted small" style={{ marginBottom: 6 }}>
+                Silver path
+              </div>
+              {forecastPointsSilver.length ? (
+                <LineChart points={forecastPointsSilver} height={220} xLabel="Horizon" yLabel="USD" />
+              ) : (
+                <div className="skeleton h200" />
+              )}
+            </div>
+          </div>
+
+          <div className="muted small" style={{ marginTop: 10 }}>
+            {forecast?.disclaimer || "Educational forecast only."}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <section className="card metalsCard">
@@ -393,7 +549,12 @@ export default function MetalsPanel() {
             <div className="metalsChartCard">
               <div className="metalsChartHead">
                 <div className="strong">7-day co-move</div>
-                <div className="muted small">Gold vs Silver (scaled)</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                  <button className="btn ghost sm" type="button" onClick={() => setForecastOpen(true)}>
+                    Forecast
+                  </button>
+                  <div className="muted small">Gold vs Silver (scaled)</div>
+                </div>
               </div>
               {series.length ? <SparkDual series={series} /> : <div className="skeleton h200" />}
               <div className="metalsLegend">
@@ -407,6 +568,8 @@ export default function MetalsPanel() {
           </div>
         </div>
       ) : null}
+
+      <ForecastModal />
     </section>
   );
 }

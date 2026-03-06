@@ -635,3 +635,144 @@ def metals_news(limit: int = 6) -> list[dict]:
 
     _set_cached(key, deduped, ttl_seconds=600)
     return deduped
+
+
+def metals_forecast(horizon: str = "1w") -> dict:
+    """
+    Educational metals forecast (fast + cached).
+
+    Horizons:
+      - 1h: next 60 minutes (5m steps)
+      - 1w: next 7 days (daily steps)
+      - 1m: next 30 days (daily steps)
+      - 1y: next 12 months (monthly steps)
+
+    Method:
+      - Estimate mean log-return (mu) and volatility (sigma) from recent history
+      - Expected path: P(t) = P0 * exp(mu * t)
+      - Band: ± 1σ * sqrt(t)
+
+    Not investment advice.
+    """
+    h = (horizon or "1w").strip().lower()
+    if h not in ("1h", "1w", "1m", "1y"):
+        h = "1w"
+
+    ttl = {"1h": 30, "1w": 120, "1m": 600, "1y": 1800}.get(h, 120)
+    key = f"metals:forecast:{h}"
+    cached = _get_cached(key)
+    if cached is not None:
+        return cached
+
+    gold_req = os.getenv("METALS_GOLD_TICKER", "XAUUSD=X").strip() or "XAUUSD=X"
+    silver_req = os.getenv("METALS_SILVER_TICKER", "XAGUSD=X").strip() or "XAGUSD=X"
+    gold_fb = os.getenv("METALS_GOLD_FALLBACK", "GC=F").strip() or "GC=F"
+    silver_fb = os.getenv("METALS_SILVER_FALLBACK", "SI=F").strip() or "SI=F"
+
+    if h == "1h":
+        interval = "5m"
+        period = "5d"
+        steps = 12
+        step_seconds = 5 * 60
+    elif h == "1w":
+        interval = "1d"
+        period = "3mo"
+        steps = 7
+        step_seconds = 24 * 3600
+    elif h == "1m":
+        interval = "1d"
+        period = "6mo"
+        steps = 30
+        step_seconds = 24 * 3600
+    else:
+        interval = "1wk"
+        period = "5y"
+        steps = 12
+        step_seconds = 30 * 24 * 3600
+
+    def _download_pair(gt: str, st: str):
+        try:
+            return yf.download(
+                tickers=[gt, st],
+                period=period,
+                interval=interval,
+                group_by="ticker",
+                auto_adjust=False,
+                progress=False,
+                threads=True,
+            )
+        except Exception:
+            return None
+
+    df = _download_pair(gold_req, silver_req)
+
+    def _close_list(sym: str):
+        try:
+            if df is None or getattr(df, "empty", False):
+                return []
+            if sym not in df.columns.get_level_values(0):
+                return []
+            s = df[sym].get("Close")
+            if s is None:
+                return []
+            s = s.dropna()
+            return [float(x) for x in s.values if x is not None]
+        except Exception:
+            return []
+
+    gold_vals = _close_list(gold_req)
+    silver_vals = _close_list(silver_req)
+    used = {"gold": gold_req, "silver": silver_req}
+    if (len(gold_vals) < 10 or len(silver_vals) < 10) and (gold_fb or silver_fb):
+        df = _download_pair(gold_fb, silver_fb)
+        gold_vals = _close_list(gold_fb)
+        silver_vals = _close_list(silver_fb)
+        if len(gold_vals) >= 10 and len(silver_vals) >= 10:
+            used = {"gold": gold_fb, "silver": silver_fb}
+
+    def _mu_sigma(vals: list[float]):
+        if len(vals) < 8:
+            return None, None, None
+        rets = []
+        for a, b in zip(vals[:-1], vals[1:]):
+            if a and b and a > 0 and b > 0:
+                rets.append(math.log(b / a))
+        if len(rets) < 5:
+            return vals[-1] if vals else None, None, None
+        mu = sum(rets) / len(rets)
+        m = mu
+        var = sum((r - m) ** 2 for r in rets) / max(1, (len(rets) - 1))
+        sigma = math.sqrt(var)
+        return vals[-1], mu, sigma
+
+    def _forecast_series(last: float | None, mu: float | None, sigma: float | None):
+        if last is None or mu is None or sigma is None:
+            return {"end": None, "series": []}
+        out = []
+        for i in range(steps + 1):
+            t = i
+            exp = math.exp(mu * t)
+            base = last * exp
+            band = math.exp(sigma * math.sqrt(max(t, 1e-9)))
+            lo = base / band
+            hi = base * band
+            out.append({"t": i, "base": base, "low": lo, "high": hi})
+        return {"end": out[-1]["base"] if out else None, "series": out}
+
+    g_last, g_mu, g_sigma = _mu_sigma(gold_vals)
+    s_last, s_mu, s_sigma = _mu_sigma(silver_vals)
+
+    g_out = _forecast_series(g_last, g_mu, g_sigma)
+    s_out = _forecast_series(s_last, s_mu, s_sigma)
+
+    payload = {
+        "horizon": h,
+        "used_tickers": used,
+        "requested_tickers": {"gold": gold_req, "silver": silver_req},
+        "step_seconds": step_seconds,
+        "gold": {"last": g_last, "predicted_end": g_out["end"], "series": g_out["series"]},
+        "silver": {"last": s_last, "predicted_end": s_out["end"], "series": s_out["series"]},
+        "disclaimer": "Educational forecast using simple drift/volatility from recent prices. Not investment advice.",
+    }
+    _set_cached(key, payload, ttl_seconds=ttl)
+    return payload

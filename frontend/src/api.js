@@ -99,6 +99,9 @@ export const api = {
   metalsQuote(ttl = 20) {
     return apiFetch(`/api/market/metals/quote/?ttl=${encodeURIComponent(String(ttl))}`);
   },
+  metalsForecast(horizon = "1w") {
+    return apiFetch(`/api/market/metals/forecast/?horizon=${encodeURIComponent(String(horizon))}`);
+  },
   quote(symbol) {
     return apiFetch(`/api/market/quote/?symbol=${encodeURIComponent(symbol)}`);
   },

@@ -31,7 +31,7 @@ from .serializers import (
     WatchlistAddSerializer,
     WatchlistItemSerializer,
 )
-from .yf_client import download_daily, get_52w_range, get_fast_quote, get_fundamentals, metals_news, metals_quote_fast, metals_summary, search_indian_equities
+from .yf_client import download_daily, get_52w_range, get_fast_quote, get_fundamentals, metals_forecast, metals_news, metals_quote_fast, metals_summary, search_indian_equities
 
 
 def _get_or_create_stock(symbol: str, name_hint: str | None = None) -> Stock:
@@ -722,3 +722,11 @@ class MetalsQuoteView(APIView):
     def get(self, request):
         ttl = int(request.query_params.get("ttl", "20") or 20)
         return Response(metals_quote_fast(ttl_seconds=ttl))
+
+
+class MetalsForecastView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        horizon = (request.query_params.get("horizon", "1w") or "1w").strip().lower()
+        return Response(metals_forecast(horizon=horizon))

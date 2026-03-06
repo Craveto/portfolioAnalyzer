@@ -2089,6 +2089,52 @@ a {
   margin-bottom: 10px;
 }
 
+.metalsSelect {
+  display: grid;
+  min-width: 160px;
+}
+
+.metalsForecastKpis {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.metalsForecastLoading {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.metalsForecastCharts {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.metalsMiniChart .histWrap {
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.10);
+}
+
+.metalsForecastModal {
+  width: min(980px, 100%);
+}
+
+.metalsForecastModalHead {
+  margin-top: 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
 .metalsSpark {
   width: 100%;
   height: auto;
@@ -2154,5 +2200,12 @@ a {
   }
   .metalsPrices {
     grid-template-columns: 1fr;
+  }
+  .metalsForecastKpis,
+  .metalsForecastCharts {
+    grid-template-columns: 1fr;
+  }
+  .metalsSelect {
+    min-width: 100%;
   }
 }
