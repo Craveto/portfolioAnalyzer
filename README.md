@@ -1,19 +1,32 @@
-# PortFolioAnalyzer (EDA App)
+# Now you can see live this webapp on 
+https://portfolio-analyzer-wine.vercel.app/
+# PortFolioAnalyzer (EDA App) 
+<img width="1550" height="900" alt="image" src="https://github.com/user-attachments/assets/f4c68f1e-d387-4056-bf00-d886fb81855f" />
 
-Day-1 deliverable: a working Django (REST) + React app with login, portfolio CRUD, and live-ish Indian market data via `yfinance`.
 
-## What you can demo (Day 1)
+#
+A working Django (REST) + React app with login, portfolio CRUD, and currently this works for live-ish Indian market data via `yfinance`.
+In this webapp you can able to create demo portfolios and can predict the future oportunities and the insights of your portfolio.
+By this you can manage  your real portfolios for indian markets. 
 
-1) Landing page loads Nifty/Sensex + “Top 10 movers” (demo universe)  
-2) After ~5 seconds a Login/Signup modal appears  
-3) Login → Dashboard → Create portfolio → Add a holding (CRUD) → See it listed
+
+## What you can demo
+
+1) Landing page loads Nifty/Sensex + “Top 10 movers” (demo universe)(currently showing top 1 movers).  
+2) After ~5 seconds a Login/Signup modal appears.
+3) Login → Dashboard → Create portfolio → Add a holding (CRUD) → See it listed.
+4) When you open portfolio , it will give you comparision parameters like (Discount, P/E, Clusters) as you can see in image .
+
+<img width="1539" height="889" alt="image" src="https://github.com/user-attachments/assets/04db9628-64a1-4ec4-846b-fae9e65e2e40" />
+
 
 ## Tech
+Currently I'm using these technologys
 
-- Backend: Django + DRF + Token auth (Day-1)
-- Frontend: React (Vite)
-- DB target: SQL Server (optional sqlite fallback for quick demo)
-- Market data: `yfinance` (Yahoo Finance)
+- Backend: Django + DRF + Token auth + hosted on (Render and Supabase for database ).
+- Frontend: React (Vite) + CSS +  Hosted on (Vercel).
+- DB target: Before hosting it runs on SQL Server  and sqlite fallback.
+- Market data: `yfinance` (Yahoo Finance) Currently Working on Indian Markets , Stay tunned for US Mrkets.
 
 ## Run (Local)
 
