@@ -182,7 +182,7 @@ def _compute_dashboard_summary(user) -> dict:
             "qty": str(t.qty),
             "price": str(t.price),
             "realized_pnl": str(t.realized_pnl),
-            "executed_at": t.executed_at,
+            "executed_at": t.executed_at.isoformat() if t.executed_at else None,
         }
         for t in recent_txs
     ]
@@ -209,10 +209,55 @@ def _compute_dashboard_summary(user) -> dict:
             "alerts_active": alerts_active,
             "alerts_triggered": alerts_triggered,
         },
-        "portfolios": [{"id": p.id, "name": p.name, "market": p.market, "created_at": p.created_at} for p in portfolios[:20]],
+        "portfolios": [
+            {
+                "id": p.id,
+                "name": p.name,
+                "market": p.market,
+                "created_at": p.created_at.isoformat() if p.created_at else None,
+            }
+            for p in portfolios[:20]
+        ],
         "watchlist_preview": watchlist_preview,
         "recent_transactions": recent,
         "market": {"nifty": nifty, "sensex": sensex},
+    }
+
+
+def _minimal_dashboard_summary(user, note: str | None = None) -> dict:
+    portfolios = list(Portfolio.objects.filter(user=user).order_by("-created_at")[:20])
+    profile, _ = UserProfile.objects.get_or_create(user=user)
+    default_portfolio = None
+    if profile.default_portfolio_id:
+        default_portfolio = {"id": profile.default_portfolio_id, "name": profile.default_portfolio.name}
+
+    return {
+        "user": UserSerializer(user).data,
+        "profile": {
+            "default_redirect": profile.default_redirect,
+            "default_portfolio": default_portfolio,
+        },
+        "kpis": {
+            "portfolios": len(portfolios),
+            "holdings": Holding.objects.filter(portfolio__user=user).count(),
+            "realized_pnl_total": "0",
+            "watchlist": WatchlistItem.objects.filter(user=user).count(),
+            "alerts_active": PriceAlert.objects.filter(user=user, is_active=True, triggered_at__isnull=True).count(),
+            "alerts_triggered": PriceAlert.objects.filter(user=user, triggered_at__isnull=False).count(),
+        },
+        "portfolios": [
+            {
+                "id": p.id,
+                "name": p.name,
+                "market": p.market,
+                "created_at": p.created_at.isoformat() if p.created_at else None,
+            }
+            for p in portfolios
+        ],
+        "watchlist_preview": [],
+        "recent_transactions": [],
+        "market": {"nifty": {}, "sensex": {}},
+        "note": note or "Dashboard loaded with reduced data because live refresh is unavailable.",
     }
 
 
@@ -253,7 +298,14 @@ def warm_dashboard_summary_cache(user, force: bool = False, fresh_seconds: int =
                 "age_seconds": round(age_seconds, 1),
             }
             return payload
-        raise
+        payload = _minimal_dashboard_summary(user)
+        payload["meta"] = {
+            "source": "fallback",
+            "updated_at": now.isoformat(),
+            "stale": True,
+            "age_seconds": None,
+        }
+        return payload
 
 
 def _refresh_cached_dashboard_summary(user_id: int, fresh_seconds: int = 45) -> None:

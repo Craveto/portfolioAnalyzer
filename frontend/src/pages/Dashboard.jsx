@@ -58,9 +58,15 @@ export default function Dashboard() {
       setPortfolios(d.portfolios || []);
       setMarketFetchedAt(Date.now());
       saveDashboardCache(d);
-    } catch {
-      clearTokens();
-      nav("/");
+      setError("");
+    } catch (e) {
+      const msg = e?.message || "Failed to load dashboard";
+      if (msg.includes("401") || /not authenticated|credentials|token/i.test(msg)) {
+        clearTokens();
+        nav("/");
+        return;
+      }
+      setError(msg);
     }
   }
 
@@ -142,6 +148,7 @@ export default function Dashboard() {
           <h1>
             Welcome <span className="mono">{me?.username || "..."}</span>
           </h1>
+          {error ? <div className="error" style={{ marginTop: 10 }}>{error}</div> : null}
           {/* <p className="muted">Like real portfolio apps: you get a quick market glance, portfolio shortcuts, and recent activity in one place.</p> */}
           <div className="kpiRow" style={{ marginTop: 12 }}>
             <button className="kpi kpiClickable" onClick={() => setInfoKey("portfolios")} type="button">
