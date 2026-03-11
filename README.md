@@ -124,3 +124,12 @@ Then use the `mssql` env settings above.
 - If the host free tier cannot schedule commands, call `POST /api/market/warm/` from an external scheduler.
 - Set `MARKET_WARMUP_TOKEN=your-secret` and send it as `X-Warmup-Token` or `?token=...`.
 - Use `force=1` only when you want to bypass the 45-second freshness window.
+## P/E on hosting
+
+- P/E/fundamentals are less reliable than quotes on free hosts because Yahoo blocks or delays some fundamentals endpoints.
+- Default behavior is now `auto`:
+  - if `RAPIDAPI_KEY` is configured, the backend prefers RapidAPI for fundamentals/P-E
+  - otherwise it falls back to `yfinance` and then direct Yahoo JSON
+- Recommended production env:
+  - `FUNDAMENTALS_PROVIDER=auto`
+  - `RAPIDAPI_KEY=...`

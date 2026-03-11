@@ -4,6 +4,8 @@ import { Link, useNavigate } from "react-router-dom";
 import NavBar from "../components/NavBar.jsx";
 import Footer from "../components/Footer.jsx";
 
+const DASHBOARD_CACHE_KEY = "dashboard_summary_cache_v1";
+
 function fmt(n) {
   if (n === null || n === undefined) return "--";
   const num = Number(n);
@@ -11,32 +13,51 @@ function fmt(n) {
   return num.toLocaleString(undefined, { maximumFractionDigits: 2 });
 }
 
+function loadDashboardCache() {
+  try {
+    const raw = localStorage.getItem(DASHBOARD_CACHE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveDashboardCache(data) {
+  try {
+    localStorage.setItem(DASHBOARD_CACHE_KEY, JSON.stringify({ savedAt: Date.now(), data }));
+  } catch {
+    // ignore
+  }
+}
+
 export default function Dashboard() {
   const nav = useNavigate();
-  const [me, setMe] = useState(null);
-  const [portfolios, setPortfolios] = useState([]);
-  const [summary, setSummary] = useState(null);
+  const cachedDashboard = loadDashboardCache()?.data || null;
+  const [me, setMe] = useState(cachedDashboard?.user || null);
+  const [portfolios, setPortfolios] = useState(cachedDashboard?.portfolios || []);
+  const [summary, setSummary] = useState(cachedDashboard);
   const [name, setName] = useState("My Portfolio");
   const [error, setError] = useState("");
   const [busyId, setBusyId] = useState(null);
   const [infoKey, setInfoKey] = useState("");
-  const [marketFetchedAt, setMarketFetchedAt] = useState(null);
+  const [marketFetchedAt, setMarketFetchedAt] = useState(() => loadDashboardCache()?.savedAt || null);
 
   useEffect(() => {
-    refreshSummary();
+    refreshSummary(false);
   }, [nav]);
 
   useEffect(() => {
     // keep the dashboard snappy; portfolios are loaded via summary
   }, []);
 
-  async function refreshSummary() {
+  async function refreshSummary(force = false) {
     try {
-      const d = await api.dashboardSummary();
+      const d = await api.dashboardSummary(force);
       setMe(d.user);
       setSummary(d);
       setPortfolios(d.portfolios || []);
       setMarketFetchedAt(Date.now());
+      saveDashboardCache(d);
     } catch {
       clearTokens();
       nav("/");
@@ -47,8 +68,15 @@ export default function Dashboard() {
     setError("");
     try {
       const p = await api.createPortfolio({ name });
-      setPortfolios((prev) => [p, ...prev]);
-      setSummary((s) => (s ? { ...s, kpis: { ...s.kpis, portfolios: (s.kpis?.portfolios || 0) + 1 } } : s));
+      setPortfolios((prev) => {
+        const next = [p, ...prev];
+        setSummary((s) => {
+          const updated = s ? { ...s, portfolios: next, kpis: { ...s.kpis, portfolios: (s.kpis?.portfolios || 0) + 1 } } : s;
+          if (updated) saveDashboardCache(updated);
+          return updated;
+        });
+        return next;
+      });
       nav(`/portfolio/${p.id}`);
     } catch (e) {
       setError(e.message || "Failed to create portfolio");
@@ -67,8 +95,15 @@ export default function Dashboard() {
     setError("");
     try {
       await api.deletePortfolio(id);
-      setPortfolios((prev) => prev.filter((p) => p.id !== id));
-      setSummary((s) => (s ? { ...s, kpis: { ...s.kpis, portfolios: Math.max(0, (s.kpis?.portfolios || 1) - 1) } } : s));
+      setPortfolios((prev) => {
+        const next = prev.filter((p) => p.id !== id);
+        setSummary((s) => {
+          const updated = s ? { ...s, portfolios: next, kpis: { ...s.kpis, portfolios: Math.max(0, (s.kpis?.portfolios || 1) - 1) } } : s;
+          if (updated) saveDashboardCache(updated);
+          return updated;
+        });
+        return next;
+      });
     } catch (e) {
       setError(e.message || "Failed to delete portfolio");
     } finally {
@@ -150,7 +185,7 @@ export default function Dashboard() {
                 Set default portfolio
               </Link>
             )}
-            <button className="btn ghost" onClick={() => refreshSummary().catch(() => {})}>
+            <button className="btn ghost" onClick={() => refreshSummary(true).catch(() => {})}>
               Refresh
             </button>
           </div>
@@ -201,8 +236,14 @@ export default function Dashboard() {
           <div className="sectionRow">
             <h3 style={{ margin: 0 }}>Market glance</h3>
             <div className="muted small" style={{ display: "flex", gap: 10, alignItems: "center" }}>
-              <span>{marketFetchedAt ? `Updated ${new Date(marketFetchedAt).toLocaleTimeString()}` : ""}</span>
-              <button className="btn ghost sm" type="button" onClick={() => refreshSummary().catch(() => {})}>
+              <span>
+                {summary?.meta?.source === "snapshot"
+                  ? "Instant from last snapshot"
+                  : marketFetchedAt
+                    ? `Updated ${new Date(marketFetchedAt).toLocaleTimeString()}`
+                    : ""}
+              </span>
+              <button className="btn ghost sm" type="button" onClick={() => refreshSummary(true).catch(() => {})}>
                 Refresh
               </button>
             </div>

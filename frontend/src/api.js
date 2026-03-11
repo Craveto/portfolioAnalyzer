@@ -141,8 +141,9 @@ export const api = {
   deleteAlert(alertId) {
     return apiFetch(`/api/alerts/${alertId}/`, { method: "DELETE", auth: true });
   },
-  dashboardSummary() {
-    return apiFetch("/api/dashboard/summary/", { auth: true });
+  dashboardSummary(force = false) {
+    const qs = force ? "?force=1" : "";
+    return apiFetch(`/api/dashboard/summary/${qs}`, { auth: true });
   },
   listStocks(q) {
     const qs = q ? `?q=${encodeURIComponent(q)}` : "";

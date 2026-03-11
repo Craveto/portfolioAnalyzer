@@ -78,6 +78,18 @@ def _extract_raw_number(v):
     return _to_float(v)
 
 
+def _has_rapidapi_key() -> bool:
+    return bool((os.getenv("RAPIDAPI_KEY") or "").strip())
+
+
+def _merge_fundamentals(base: dict | None = None, extra: dict | None = None) -> dict:
+    out = dict(base or {})
+    for key, value in (extra or {}).items():
+        if value is not None and value != "":
+            out[key] = value
+    return out
+
+
 def _fundamentals_rapidapi_yahoo(ticker: str) -> dict:
     """
     Fundamentals via RapidAPI Yahoo Finance (more reliable than scraping on some hosts).
@@ -93,10 +105,17 @@ def _fundamentals_rapidapi_yahoo(ticker: str) -> dict:
 
     host = (os.getenv("RAPIDAPI_HOST") or "apidojo-yahoo-finance-v1.p.rapidapi.com").strip()
     region = (os.getenv("RAPIDAPI_REGION") or "IN").strip()
+    summary_path = (os.getenv("RAPIDAPI_SUMMARY_PATH") or "/stock/v2/get-summary").strip() or "/stock/v2/get-summary"
+    if not summary_path.startswith("/"):
+        summary_path = f"/{summary_path}"
 
-    url = f"https://{host}/stock/v2/get-summary"
+    url = f"https://{host}{summary_path}"
     headers = {"x-rapidapi-key": key, "x-rapidapi-host": host}
-    params = {"symbol": ticker, "region": region}
+    params = {
+        "symbol": ticker,
+        "region": region,
+        "lang": (os.getenv("RAPIDAPI_LANG") or "en-US").strip() or "en-US",
+    }
 
     try:
         res = requests.get(url, headers=headers, params=params, timeout=15)
@@ -145,6 +164,58 @@ def _fundamentals_rapidapi_yahoo(ticker: str) -> dict:
         "currency": currency,
     }
     return out
+
+
+def _fundamentals_yahoo_http(ticker: str) -> dict:
+    url = f"https://query1.finance.yahoo.com/v10/finance/quoteSummary/{ticker}"
+    params = {"modules": "summaryDetail,defaultKeyStatistics,financialData,price,assetProfile"}
+    headers = {"User-Agent": "Mozilla/5.0"}
+    try:
+        res = requests.get(url, params=params, headers=headers, timeout=15)
+        if res.status_code != 200:
+            return {}
+        data = res.json() if res.content else {}
+        result = (((data or {}).get("quoteSummary") or {}).get("result") or [None])[0] or {}
+    except Exception:
+        return {}
+
+    summary = result.get("summaryDetail") or {}
+    stats = result.get("defaultKeyStatistics") or {}
+    financial = result.get("financialData") or {}
+    price = result.get("price") or {}
+    profile = result.get("assetProfile") or {}
+
+    trailing_pe = _normalize_pe(
+        _extract_raw_number(
+            summary.get("trailingPE")
+            or stats.get("trailingPE")
+            or financial.get("trailingPE")
+            or price.get("trailingPE")
+        )
+    )
+    forward_pe = _normalize_pe(
+        _extract_raw_number(
+            summary.get("forwardPE")
+            or stats.get("forwardPE")
+            or financial.get("forwardPE")
+            or price.get("forwardPE")
+        )
+    )
+
+    market_cap = _extract_raw_number(summary.get("marketCap") or stats.get("marketCap") or price.get("marketCap"))
+    currency = price.get("currency")
+    if isinstance(currency, dict):
+        currency = currency.get("fmt") or currency.get("raw")
+
+    return {
+        "ticker": ticker,
+        "trailingPE": trailing_pe,
+        "forwardPE": forward_pe,
+        "marketCap": market_cap,
+        "sector": profile.get("sector"),
+        "industry": profile.get("industry"),
+        "currency": currency,
+    }
 
 
 def download_daily(tickers: list[str], days: int = 5):
@@ -249,36 +320,38 @@ def get_fundamentals(ticker: str) -> dict:
     if cached is not None:
         return cached
 
-    provider = (os.getenv("FUNDAMENTALS_PROVIDER") or "yfinance").strip().lower()
-    if provider in ("rapidapi", "rapidapi_yahoo", "rapidapi_yahoo_finance"):
+    provider = (os.getenv("FUNDAMENTALS_PROVIDER") or "auto").strip().lower()
+    prefer_rapid = provider in ("rapidapi", "rapidapi_yahoo", "rapidapi_yahoo_finance") or (provider == "auto" and _has_rapidapi_key())
+    prefer_yfinance_only = provider in ("yfinance", "yf")
+
+    if prefer_rapid:
         rapid = _fundamentals_rapidapi_yahoo(ticker)
         if rapid and (rapid.get("trailingPE") is not None or rapid.get("forwardPE") is not None):
-            # Cache longer to reduce paid API calls.
             _set_cached(key, rapid, ttl_seconds=3600)
             return rapid
 
     t = yf.Ticker(ticker)
     info: dict = {}
-    try:
-        # Newer yfinance prefers get_info(); keep backwards compatible.
-        get_info = getattr(t, "get_info", None)
-        if callable(get_info):
-            info = get_info() or {}
-        else:
-            info = t.info or {}
-    except Exception:
-        info = {}
-
-    # Try a second time via the other method if we got nothing (transient failures happen).
-    if not info:
+    if not prefer_rapid or prefer_yfinance_only:
         try:
+            # Newer yfinance prefers get_info(); keep backwards compatible.
             get_info = getattr(t, "get_info", None)
-            if not callable(get_info):
-                info = getattr(t, "info", None) or {}
+            if callable(get_info):
+                info = get_info() or {}
             else:
                 info = t.info or {}
         except Exception:
             info = {}
+
+        if not info:
+            try:
+                get_info = getattr(t, "get_info", None)
+                if not callable(get_info):
+                    info = getattr(t, "info", None) or {}
+                else:
+                    info = t.info or {}
+            except Exception:
+                info = {}
 
     trailing_pe = _normalize_pe(
         info.get("trailingPE")
@@ -299,6 +372,23 @@ def get_fundamentals(ticker: str) -> dict:
         eps = _to_float(info.get("trailingEps") or info.get("epsTrailingTwelveMonths") or info.get("epsTTM"))
         if price is not None and eps is not None and eps != 0:
             trailing_pe = _normalize_pe(price / eps)
+
+    # Hosting fallback: direct Yahoo JSON endpoint is often more reliable than yfinance's info scraping.
+    if trailing_pe is None and forward_pe is None:
+        http_data = _fundamentals_yahoo_http(ticker)
+        if http_data:
+            trailing_pe = http_data.get("trailingPE")
+            forward_pe = http_data.get("forwardPE")
+            info = _merge_fundamentals(info, http_data)
+
+    # Final fallback when auto mode is used and RapidAPI is configured:
+    # if yfinance/HTTP gave no PE, try RapidAPI once more for hosted environments.
+    if trailing_pe is None and forward_pe is None and not prefer_rapid and _has_rapidapi_key():
+        rapid = _fundamentals_rapidapi_yahoo(ticker)
+        if rapid:
+            trailing_pe = rapid.get("trailingPE")
+            forward_pe = rapid.get("forwardPE")
+            info = _merge_fundamentals(info, rapid)
 
     fundamentals = {
         "ticker": ticker,

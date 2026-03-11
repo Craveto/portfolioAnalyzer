@@ -138,6 +138,149 @@ def warm_market_summary_cache(cache_key: str, top_universe: list[str], force: bo
         }
 
 
+def _compute_dashboard_summary(user) -> dict:
+    portfolios = Portfolio.objects.filter(user=user).order_by("-created_at")
+    portfolio_ids = list(portfolios.values_list("id", flat=True))
+
+    holdings_qs = Holding.objects.filter(portfolio_id__in=portfolio_ids).select_related("stock")
+    holdings_count = holdings_qs.count()
+
+    realized_total = Transaction.objects.filter(portfolio_id__in=portfolio_ids, side="SELL").values_list("realized_pnl", flat=True)
+    try:
+        realized_pnl_total = str(sum((Decimal(str(x)) for x in realized_total), Decimal("0")))
+    except Exception:
+        realized_pnl_total = "0"
+
+    watch_items = WatchlistItem.objects.filter(user=user).select_related("stock")[:8]
+    watchlist_count = WatchlistItem.objects.filter(user=user).count()
+
+    watchlist_preview = []
+    for wi in watch_items:
+        last = None
+        try:
+            last = get_fast_quote(wi.stock.symbol).get("last_price")
+        except Exception:
+            last = None
+        watchlist_preview.append({"id": wi.id, "symbol": wi.stock.symbol, "name": wi.stock.name, "last_price": last})
+
+    alerts = PriceAlert.objects.filter(user=user)
+    alerts_active = alerts.filter(is_active=True, triggered_at__isnull=True).count()
+    alerts_triggered = alerts.filter(triggered_at__isnull=False).count()
+
+    recent_txs = (
+        Transaction.objects.filter(portfolio_id__in=portfolio_ids)
+        .select_related("stock", "portfolio")
+        .order_by("-executed_at", "-id")[:8]
+    )
+    recent = [
+        {
+            "id": t.id,
+            "portfolio_id": t.portfolio_id,
+            "portfolio_name": t.portfolio.name,
+            "symbol": t.stock.symbol,
+            "side": t.side,
+            "qty": str(t.qty),
+            "price": str(t.price),
+            "realized_pnl": str(t.realized_pnl),
+            "executed_at": t.executed_at,
+        }
+        for t in recent_txs
+    ]
+
+    profile, _ = UserProfile.objects.get_or_create(user=user)
+    default_portfolio = None
+    if profile.default_portfolio_id:
+        default_portfolio = {"id": profile.default_portfolio_id, "name": profile.default_portfolio.name}
+
+    nifty = get_fast_quote("^NSEI")
+    sensex = get_fast_quote("^BSESN")
+
+    return {
+        "user": UserSerializer(user).data,
+        "profile": {
+            "default_redirect": profile.default_redirect,
+            "default_portfolio": default_portfolio,
+        },
+        "kpis": {
+            "portfolios": portfolios.count(),
+            "holdings": holdings_count,
+            "realized_pnl_total": realized_pnl_total,
+            "watchlist": watchlist_count,
+            "alerts_active": alerts_active,
+            "alerts_triggered": alerts_triggered,
+        },
+        "portfolios": [{"id": p.id, "name": p.name, "market": p.market, "created_at": p.created_at} for p in portfolios[:20]],
+        "watchlist_preview": watchlist_preview,
+        "recent_transactions": recent,
+        "market": {"nifty": nifty, "sensex": sensex},
+    }
+
+
+def warm_dashboard_summary_cache(user, force: bool = False, fresh_seconds: int = 45) -> dict:
+    now = timezone.now()
+    cache_key = f"dashboard_summary:user:{user.id}"
+    snapshot = CachedPayload.objects.filter(key=cache_key).first()
+    if snapshot and not force:
+        age_seconds = (now - snapshot.updated_at).total_seconds()
+        if age_seconds <= fresh_seconds:
+            payload = dict(snapshot.payload or {})
+            payload["meta"] = {
+                "source": "snapshot",
+                "updated_at": snapshot.updated_at.isoformat(),
+                "stale": False,
+                "age_seconds": round(age_seconds, 1),
+            }
+            return payload
+
+    try:
+        payload = _compute_dashboard_summary(user)
+        snapshot, _ = CachedPayload.objects.update_or_create(key=cache_key, defaults={"payload": payload})
+        payload["meta"] = {
+            "source": "fresh",
+            "updated_at": snapshot.updated_at.isoformat(),
+            "stale": False,
+            "age_seconds": 0,
+        }
+        return payload
+    except Exception:
+        if snapshot:
+            age_seconds = (now - snapshot.updated_at).total_seconds()
+            payload = dict(snapshot.payload or {})
+            payload["meta"] = {
+                "source": "snapshot",
+                "updated_at": snapshot.updated_at.isoformat(),
+                "stale": True,
+                "age_seconds": round(age_seconds, 1),
+            }
+            return payload
+        raise
+
+
+def _refresh_cached_dashboard_summary(user_id: int, fresh_seconds: int = 45) -> None:
+    close_old_connections()
+    try:
+        user = User.objects.filter(id=user_id).first()
+        if user:
+            warm_dashboard_summary_cache(user=user, force=True, fresh_seconds=fresh_seconds)
+    except Exception:
+        pass
+    finally:
+        cache_key = f"dashboard_summary:user:{user_id}"
+        with _refresh_lock:
+            _refresh_flags[cache_key] = False
+        close_old_connections()
+
+
+def _start_dashboard_refresh(user_id: int, fresh_seconds: int = 45) -> None:
+    cache_key = f"dashboard_summary:user:{user_id}"
+    with _refresh_lock:
+        if _refresh_flags.get(cache_key):
+            return
+        _refresh_flags[cache_key] = True
+    t = threading.Thread(target=_refresh_cached_dashboard_summary, args=(user_id, fresh_seconds), daemon=True)
+    t.start()
+
+
 def _refresh_cached_market_summary(cache_key: str, top_universe: list[str]) -> None:
     close_old_connections()
     try:
@@ -673,90 +816,30 @@ class AlertDeleteView(APIView):
 
 class DashboardSummaryView(APIView):
     permission_classes = [permissions.IsAuthenticated]
+    FRESH_SECONDS = 45
 
     def get(self, request):
         user = request.user
+        force = str(request.query_params.get("force") or "").lower() in {"1", "true", "yes"}
+        cache_key = f"dashboard_summary:user:{user.id}"
+        now = timezone.now()
+        snapshot = CachedPayload.objects.filter(key=cache_key).first()
 
-        portfolios = Portfolio.objects.filter(user=user).order_by("-created_at")
-        portfolio_ids = list(portfolios.values_list("id", flat=True))
-
-        holdings_qs = Holding.objects.filter(portfolio_id__in=portfolio_ids).select_related("stock")
-        holdings_count = holdings_qs.count()
-
-        realized_total = Transaction.objects.filter(portfolio_id__in=portfolio_ids, side="SELL").values_list("realized_pnl", flat=True)
-        try:
-            realized_pnl_total = str(sum((Decimal(str(x)) for x in realized_total), Decimal("0")))
-        except Exception:
-            realized_pnl_total = "0"
-
-        # Watchlist + alerts
-        watch_items = WatchlistItem.objects.filter(user=user).select_related("stock")[:8]
-        watchlist_count = WatchlistItem.objects.filter(user=user).count()
-
-        watchlist_preview = []
-        for wi in watch_items:
-            last = None
-            try:
-                last = get_fast_quote(wi.stock.symbol).get("last_price")
-            except Exception:
-                last = None
-            watchlist_preview.append({"id": wi.id, "symbol": wi.stock.symbol, "name": wi.stock.name, "last_price": last})
-
-        alerts = PriceAlert.objects.filter(user=user)
-        alerts_active = alerts.filter(is_active=True, triggered_at__isnull=True).count()
-        alerts_triggered = alerts.filter(triggered_at__isnull=False).count()
-
-        recent_txs = (
-            Transaction.objects.filter(portfolio_id__in=portfolio_ids)
-            .select_related("stock", "portfolio")
-            .order_by("-executed_at", "-id")[:8]
-        )
-        recent = [
-            {
-                "id": t.id,
-                "portfolio_id": t.portfolio_id,
-                "portfolio_name": t.portfolio.name,
-                "symbol": t.stock.symbol,
-                "side": t.side,
-                "qty": str(t.qty),
-                "price": str(t.price),
-                "realized_pnl": str(t.realized_pnl),
-                "executed_at": t.executed_at,
+        if snapshot and not force:
+            age_seconds = (now - snapshot.updated_at).total_seconds()
+            payload = dict(snapshot.payload or {})
+            payload["meta"] = {
+                "source": "snapshot",
+                "updated_at": snapshot.updated_at.isoformat(),
+                "stale": age_seconds > self.FRESH_SECONDS,
+                "age_seconds": round(age_seconds, 1),
             }
-            for t in recent_txs
-        ]
+            if age_seconds > self.FRESH_SECONDS:
+                _start_dashboard_refresh(user.id, self.FRESH_SECONDS)
+            return Response(payload)
 
-        # Profile preferences (for quick actions)
-        profile, _ = UserProfile.objects.get_or_create(user=user)
-        default_portfolio = None
-        if profile.default_portfolio_id:
-            default_portfolio = {"id": profile.default_portfolio_id, "name": profile.default_portfolio.name}
-
-        # Market cards
-        nifty = get_fast_quote("^NSEI")
-        sensex = get_fast_quote("^BSESN")
-
-        return Response(
-            {
-                "user": UserSerializer(user).data,
-                "profile": {
-                    "default_redirect": profile.default_redirect,
-                    "default_portfolio": default_portfolio,
-                },
-                "kpis": {
-                    "portfolios": portfolios.count(),
-                    "holdings": holdings_count,
-                    "realized_pnl_total": realized_pnl_total,
-                    "watchlist": watchlist_count,
-                    "alerts_active": alerts_active,
-                    "alerts_triggered": alerts_triggered,
-                },
-                "portfolios": [{"id": p.id, "name": p.name, "market": p.market, "created_at": p.created_at} for p in portfolios[:20]],
-                "watchlist_preview": watchlist_preview,
-                "recent_transactions": recent,
-                "market": {"nifty": nifty, "sensex": sensex},
-            }
-        )
+        payload = warm_dashboard_summary_cache(user=user, force=True, fresh_seconds=self.FRESH_SECONDS)
+        return Response(payload)
 
 class MarketSummaryView(APIView):
     permission_classes = [permissions.AllowAny]
