@@ -29,8 +29,17 @@
 
   .themeBtn,
   .navBurger {
-    width: 42px;
     height: 42px;
+  }
+
+  .themeBtn {
+    min-width: 94px;
+    padding: 0 10px;
+    gap: 8px;
+  }
+
+  .themeBtnLabel {
+    font-size: 11px;
   }
 }
 

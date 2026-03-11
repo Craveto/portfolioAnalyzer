@@ -4,9 +4,24 @@ import math
 import os
 import time
 from dataclasses import dataclass
+from pathlib import Path
 
 import yfinance as yf
 import requests
+
+
+def _configure_yfinance_cache() -> None:
+    try:
+        cache_dir = Path(os.getenv("YFINANCE_CACHE_DIR") or (Path(__file__).resolve().parents[1] / ".cache" / "yfinance"))
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        set_cache_dir = getattr(yf, "set_tz_cache_location", None)
+        if callable(set_cache_dir):
+            set_cache_dir(str(cache_dir))
+    except Exception:
+        pass
+
+
+_configure_yfinance_cache()
 
 
 @dataclass(frozen=True)

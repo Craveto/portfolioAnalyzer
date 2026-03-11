@@ -6,6 +6,8 @@ import NavBar from "../components/NavBar.jsx";
 import Footer from "../components/Footer.jsx";
 import MetalsPanel from "../components/MetalsPanel.jsx";
 
+const MARKET_CACHE_KEY = "landing_market_summary_cache_v1";
+
 function formatNum(n) {
   if (n === null || n === undefined) return "--";
   const num = Number(n);
@@ -13,10 +15,27 @@ function formatNum(n) {
   return num.toLocaleString(undefined, { maximumFractionDigits: 2 });
 }
 
+function loadMarketCache() {
+  try {
+    const raw = localStorage.getItem(MARKET_CACHE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveMarketCache(data) {
+  try {
+    localStorage.setItem(MARKET_CACHE_KEY, JSON.stringify({ savedAt: Date.now(), data }));
+  } catch {
+    // ignore
+  }
+}
+
 export default function Landing() {
   const nav = useNavigate();
-  const [market, setMarket] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [market, setMarket] = useState(() => loadMarketCache()?.data || null);
+  const [loading, setLoading] = useState(() => !loadMarketCache()?.data);
   const [error, setError] = useState("");
   const [loginOpen, setLoginOpen] = useState(false);
 
@@ -37,6 +56,7 @@ export default function Landing() {
       .then((data) => {
         if (!alive) return;
         setMarket(data);
+        saveMarketCache(data);
         setError("");
       })
       .catch((err) => {
@@ -120,7 +140,9 @@ export default function Landing() {
             <div className="landingHeroPanel">
               <div className="landingPanelHeader">
                 <div className="strong">Market pulse</div>
-                <div className="muted small">{loading ? "Updating..." : "Cached ~30s"}</div>
+                <div className="muted small">
+                  {loading ? "Updating..." : market?.meta?.source === "snapshot" ? "Instant from last snapshot" : "Fresh fetch"}
+                </div>
               </div>
               {loading ? <div className="skeleton h200" /> : null}
               {error ? <div className="error">{error}</div> : null}

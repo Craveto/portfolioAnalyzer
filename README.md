@@ -103,6 +103,7 @@ Then use the `mssql` env settings above.
 - `POST /api/auth/login/` (returns DRF token)
 - `GET /api/auth/me/`
 - `GET /api/market/summary/` (Nifty/Sensex + top movers)
+- `POST /api/market/warm/` (pre-warm landing cache; optional token)
 - `GET /api/market/quote/?symbol=RELIANCE.NS` (single symbol quote)
 - `GET /api/stocks/?q=...` (search)
 - `GET /api/stocks/live/?q=...` (live search via yfinance; India tickers only)
@@ -117,3 +118,9 @@ Then use the `mssql` env settings above.
 
 - This Day-1 version fetches market data on-demand (cached ~30 seconds) and **does not** store large time-series in SQL Server.
 - Next modules: save only portfolio tickers’ daily snapshots to file storage (CSV/Parquet) for EDA & prediction without bloating SQL.
+## Warm-up for hosting
+
+- Run `python manage.py warm_market_cache` every 1-5 minutes on the backend host.
+- If the host free tier cannot schedule commands, call `POST /api/market/warm/` from an external scheduler.
+- Set `MARKET_WARMUP_TOKEN=your-secret` and send it as `X-Warmup-Token` or `?token=...`.
+- Use `force=1` only when you want to bypass the 45-second freshness window.

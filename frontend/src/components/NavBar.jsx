@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
+import Popover from "./Popover.jsx";
 
 function cx(...parts) {
   return parts.filter(Boolean).join(" ");
@@ -97,9 +98,21 @@ function navIcon(to) {
 
 const THEME_KEY = "eda_theme";
 const THEMES = [
-  { id: "violet", label: "Violet" },
-  { id: "emerald", label: "Emerald" },
-  { id: "sunset", label: "Sunset" }
+  {
+    id: "aurora",
+    label: "Aurora",
+    note: "Electric cobalt with warm signal accents"
+  },
+  {
+    id: "graphite",
+    label: "Graphite",
+    note: "Refined finance terminal look"
+  },
+  {
+    id: "ember",
+    label: "Ember",
+    note: "Copper energy with dark editorial depth"
+  }
 ];
 
 export default function NavBar({
@@ -115,12 +128,17 @@ export default function NavBar({
 }) {
   const loc = useLocation();
   const [open, setOpen] = useState(false);
+  const [themeOpen, setThemeOpen] = useState(false);
+  const [themeAnchor, setThemeAnchor] = useState(null);
   const [theme, setTheme] = useState(() => {
     try {
       const saved = localStorage.getItem(THEME_KEY);
-      return saved || "violet";
+      if (saved === "violet") return "aurora";
+      if (saved === "emerald") return "graphite";
+      if (saved === "sunset") return "ember";
+      return saved || "aurora";
     } catch {
-      return "violet";
+      return "aurora";
     }
   });
 
@@ -142,6 +160,11 @@ export default function NavBar({
   }, [loc.pathname]);
 
   useEffect(() => {
+    setThemeOpen(false);
+    setThemeAnchor(null);
+  }, [loc.pathname]);
+
+  useEffect(() => {
     if (!open) return;
     const onKey = (e) => {
       if (e.key === "Escape") setOpen(false);
@@ -152,6 +175,7 @@ export default function NavBar({
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
+    document.documentElement.style.colorScheme = "dark";
     try {
       localStorage.setItem(THEME_KEY, theme);
     } catch {
@@ -159,31 +183,25 @@ export default function NavBar({
     }
   }, [theme]);
 
-  const nextTheme = () => {
-    const idx = Math.max(
-      0,
-      THEMES.findIndex((t) => t.id === theme)
-    );
-    const next = THEMES[(idx + 1) % THEMES.length]?.id || "violet";
-    setTheme(next);
-  };
-
   const themeLabel = THEMES.find((t) => t.id === theme)?.label || "Theme";
-  const themeBtn = showThemeToggle ? (
-    <button className="themeBtn" type="button" onClick={nextTheme} aria-label={`Theme: ${themeLabel}`} title={`Theme: ${themeLabel}`}>
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-        <path
-          d="M12 3.5c-4.7 0-8.5 3.8-8.5 8.5S7.3 20.5 12 20.5c3.6 0 6.7-2.2 7.9-5.4.2-.6-.3-1.1-.9-1.1h-2.2c-1.4 0-2.5-1.1-2.5-2.5V9.3c0-1.4-1.1-2.5-2.5-2.5H8.6c-.6 0-1.1-.6-.9-1.1C8.9 4.7 10.4 3.5 12 3.5Z"
-          stroke="currentColor"
-          strokeWidth="1.8"
-          strokeLinejoin="round"
-        />
-        <circle cx="16.7" cy="7.6" r="1" fill="currentColor" opacity="0.9" />
-        <circle cx="18.2" cy="11.2" r="1" fill="currentColor" opacity="0.7" />
-        <circle cx="15.2" cy="14.8" r="1" fill="currentColor" opacity="0.6" />
-      </svg>
-    </button>
-  ) : null;
+  const activeTheme = THEMES.find((t) => t.id === theme) || THEMES[0];
+  const renderThemeBtn = () =>
+    showThemeToggle ? (
+      <button
+        className="themeBtn"
+        type="button"
+        onClick={(e) => {
+          const same = themeAnchor === e.currentTarget;
+          setThemeAnchor(e.currentTarget);
+          setThemeOpen((v) => (same ? !v : true));
+        }}
+        aria-label={`Theme: ${themeLabel}`}
+        title={`Theme: ${themeLabel}`}
+      >
+        <span className="themeDot" aria-hidden="true" />
+        <span className="themeBtnLabel">{themeLabel}</span>
+      </button>
+    ) : null;
 
   return (
     <>
@@ -218,7 +236,7 @@ export default function NavBar({
             </nav>
           ) : null}
 
-          {actions || themeBtn ? <div className="navActions">{themeBtn}{actions}</div> : null}
+          {actions || showThemeToggle ? <div className="navActions">{renderThemeBtn()}{actions}</div> : null}
 
           {computedLinks.length ? (
             <button
@@ -269,9 +287,9 @@ export default function NavBar({
                   </NavLink>
                 ))}
               </div>
-              {actions || themeBtn ? (
+              {actions || showThemeToggle ? (
                 <div className="navMobileActions">
-                  {themeBtn}
+                  {renderThemeBtn()}
                   {actions}
                 </div>
               ) : null}
@@ -279,6 +297,40 @@ export default function NavBar({
           </div>
         ) : null}
       </header>
+
+      <Popover
+        open={themeOpen}
+        anchorRef={{ current: themeAnchor }}
+        onClose={() => setThemeOpen(false)}
+        width={420}
+        offset={14}
+        title="Choose Theme"
+        ariaLabel="Theme picker"
+        draggable={false}
+        tapToMove={false}
+        followPointer={false}
+      >
+        <div className="themeMenu">
+          {THEMES.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              className={item.id === theme ? "themeOption active" : "themeOption"}
+              onClick={() => {
+                setTheme(item.id);
+                setThemeOpen(false);
+              }}
+            >
+              <span className={`themeSwatch ${item.id}`} aria-hidden="true" />
+              <span className="themeOptionText">
+                <span className="themeOptionLabel">{item.label}</span>
+                <span className="themeOptionNote">{item.note}</span>
+              </span>
+              {item.id === activeTheme.id ? <span className="themeOptionCheck">Active</span> : null}
+            </button>
+          ))}
+        </div>
+      </Popover>
 
       {mobileTabs && tabs.length ? (
         <nav className="mobileTabsBar" aria-label="Mobile navigation">

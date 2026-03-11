@@ -1,17 +1,22 @@
 from __future__ import annotations
 
+import os
+import threading
 from decimal import Decimal
 
 from django.contrib.auth import authenticate
 from django.contrib.auth.models import User
+from django.db import close_old_connections
 from django.db import transaction as db_transaction
 from django.db.models import Q
+from django.utils import timezone
 from rest_framework import permissions, status
 from rest_framework.authtoken.models import Token
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from accounts.models import UserProfile
+from .models import CachedPayload
 from portfolio.models import Holding, Portfolio, Stock, Transaction
 from watchlist.models import PriceAlert, WatchlistItem
 
@@ -34,6 +39,10 @@ from .serializers import (
 from .yf_client import download_daily, get_52w_range, get_fast_quote, get_fundamentals, metals_forecast, metals_news, metals_quote_fast, metals_summary, search_indian_equities
 
 
+_refresh_flags: dict[str, bool] = {}
+_refresh_lock = threading.Lock()
+
+
 def _get_or_create_stock(symbol: str, name_hint: str | None = None) -> Stock:
     symbol = (symbol or "").strip().upper()
     name_hint = (name_hint or "").strip()
@@ -47,6 +56,108 @@ def _get_or_create_stock(symbol: str, name_hint: str | None = None) -> Stock:
         stock.exchange = exchange
         stock.save(update_fields=["name", "exchange"])
     return stock
+
+
+def _compute_market_summary(top_universe: list[str]) -> dict:
+    nifty = get_fast_quote("^NSEI")
+    sensex = get_fast_quote("^BSESN")
+
+    df = download_daily(top_universe, days=5)
+    movers = []
+    for symbol in top_universe:
+        try:
+            hist = df[symbol] if symbol in df.columns.get_level_values(0) else None
+            if hist is None or hist.empty:
+                continue
+            closes = hist["Close"].dropna()
+            if len(closes) < 1:
+                continue
+            last = float(closes.iloc[-1])
+            prev = float(closes.iloc[-2]) if len(closes) >= 2 else last
+            chg_pct = ((last - prev) / prev) * 100 if prev else 0.0
+            movers.append({"symbol": symbol, "last": last, "changePct": chg_pct})
+        except Exception:
+            continue
+
+    movers.sort(key=lambda x: abs(x["changePct"]), reverse=True)
+    top10 = movers[:10]
+
+    return {
+        "indices": {"nifty": nifty, "sensex": sensex},
+        "top10": top10,
+        "note": "Top10 is computed from a fixed Nifty-like universe for Day-1 demo.",
+    }
+
+
+def warm_market_summary_cache(cache_key: str, top_universe: list[str], force: bool = False, fresh_seconds: int = 45) -> dict:
+    now = timezone.now()
+    snapshot = CachedPayload.objects.filter(key=cache_key).first()
+    if snapshot and not force:
+        age_seconds = (now - snapshot.updated_at).total_seconds()
+        if age_seconds <= fresh_seconds:
+            payload = dict(snapshot.payload or {})
+            payload["meta"] = {
+                "source": "snapshot",
+                "updated_at": snapshot.updated_at.isoformat(),
+                "stale": False,
+                "age_seconds": round(age_seconds, 1),
+            }
+            return payload
+
+    try:
+        payload = _compute_market_summary(top_universe)
+        snapshot, _ = CachedPayload.objects.update_or_create(key=cache_key, defaults={"payload": payload})
+        payload["meta"] = {
+            "source": "fresh",
+            "updated_at": snapshot.updated_at.isoformat(),
+            "stale": False,
+            "age_seconds": 0,
+        }
+        return payload
+    except Exception:
+        if snapshot:
+            age_seconds = (now - snapshot.updated_at).total_seconds()
+            payload = dict(snapshot.payload or {})
+            payload["meta"] = {
+                "source": "snapshot",
+                "updated_at": snapshot.updated_at.isoformat(),
+                "stale": True,
+                "age_seconds": round(age_seconds, 1),
+            }
+            return payload
+        return {
+            "indices": {"nifty": {}, "sensex": {}},
+            "top10": [],
+            "note": "Market data temporarily unavailable. Last snapshot will appear after first successful refresh.",
+            "meta": {
+                "source": "unavailable",
+                "updated_at": now.isoformat(),
+                "stale": True,
+                "age_seconds": None,
+            },
+        }
+
+
+def _refresh_cached_market_summary(cache_key: str, top_universe: list[str]) -> None:
+    close_old_connections()
+    try:
+        payload = _compute_market_summary(top_universe)
+        CachedPayload.objects.update_or_create(key=cache_key, defaults={"payload": payload})
+    except Exception:
+        pass
+    finally:
+        with _refresh_lock:
+            _refresh_flags[cache_key] = False
+        close_old_connections()
+
+
+def _start_market_refresh(cache_key: str, top_universe: list[str]) -> None:
+    with _refresh_lock:
+        if _refresh_flags.get(cache_key):
+            return
+        _refresh_flags[cache_key] = True
+    t = threading.Thread(target=_refresh_cached_market_summary, args=(cache_key, top_universe), daemon=True)
+    t.start()
 
 
 class RegisterView(APIView):
@@ -649,6 +760,8 @@ class DashboardSummaryView(APIView):
 
 class MarketSummaryView(APIView):
     permission_classes = [permissions.AllowAny]
+    CACHE_KEY = "landing_market_summary"
+    FRESH_SECONDS = 45
 
     TOP_UNIVERSE = [
         "RELIANCE.NS",
@@ -669,33 +782,58 @@ class MarketSummaryView(APIView):
     ]
 
     def get(self, request):
-        # Indices (Yahoo Finance)
-        nifty = get_fast_quote("^NSEI")
-        sensex = get_fast_quote("^BSESN")
+        now = timezone.now()
+        snapshot = CachedPayload.objects.filter(key=self.CACHE_KEY).first()
 
-        # "Top 10" for demo: pick biggest % movers from a fixed liquid universe.
-        df = download_daily(self.TOP_UNIVERSE, days=5)
-        movers = []
-        for symbol in self.TOP_UNIVERSE:
-            try:
-                hist = df[symbol] if symbol in df.columns.get_level_values(0) else None
-                if hist is None or hist.empty:
-                    continue
-                last = float(hist["Close"].dropna().iloc[-1])
-                prev = float(hist["Close"].dropna().iloc[-2]) if len(hist["Close"].dropna()) >= 2 else last
-                chg_pct = ((last - prev) / prev) * 100 if prev else 0.0
-                movers.append({"symbol": symbol, "last": last, "changePct": chg_pct})
-            except Exception:
-                continue
+        if snapshot:
+            age_seconds = (now - snapshot.updated_at).total_seconds()
+            payload = dict(snapshot.payload or {})
+            payload["meta"] = {
+                "source": "snapshot",
+                "updated_at": snapshot.updated_at.isoformat(),
+                "stale": age_seconds > self.FRESH_SECONDS,
+                "age_seconds": round(age_seconds, 1),
+            }
+            if age_seconds > self.FRESH_SECONDS:
+                _start_market_refresh(self.CACHE_KEY, self.TOP_UNIVERSE)
+            return Response(payload)
 
-        movers.sort(key=lambda x: abs(x["changePct"]), reverse=True)
-        top10 = movers[:10]
+        payload = warm_market_summary_cache(
+            cache_key=self.CACHE_KEY,
+            top_universe=self.TOP_UNIVERSE,
+            force=True,
+            fresh_seconds=self.FRESH_SECONDS,
+        )
+        return Response(payload)
 
+
+class MarketWarmView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        token = (os.getenv("MARKET_WARMUP_TOKEN") or "").strip()
+        provided = (
+            request.headers.get("X-Warmup-Token")
+            or request.query_params.get("token")
+            or request.data.get("token")
+            or ""
+        ).strip()
+        if token and provided != token:
+            return Response({"detail": "Invalid warmup token."}, status=status.HTTP_403_FORBIDDEN)
+
+        force = str(request.query_params.get("force") or request.data.get("force") or "").lower() in {"1", "true", "yes"}
+        payload = warm_market_summary_cache(
+            cache_key=MarketSummaryView.CACHE_KEY,
+            top_universe=MarketSummaryView.TOP_UNIVERSE,
+            force=force,
+            fresh_seconds=MarketSummaryView.FRESH_SECONDS,
+        )
         return Response(
             {
-                "indices": {"nifty": nifty, "sensex": sensex},
-                "top10": top10,
-                "note": "Top10 is computed from a fixed Nifty-like universe for Day-1 demo.",
+                "ok": True,
+                "warmed": True,
+                "cache_key": MarketSummaryView.CACHE_KEY,
+                "meta": payload.get("meta", {}),
             }
         )
 
