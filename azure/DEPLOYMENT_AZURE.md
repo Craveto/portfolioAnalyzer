@@ -47,6 +47,7 @@ If you insist on SQL Server, use:
 
 - GitHub repo
 - Branch: `azureDeploy`
+- Workflow: `.github/workflows/azure-backend.yml`
 
 ### 4. Working directory
 
@@ -94,3 +95,19 @@ Use:
 5. Create frontend Static Web App
 6. Add `VITE_API_BASE_URL`
 7. Test login, dashboard, portfolio, P/E
+
+## Important backend fix
+
+If App Service starts with `ModuleNotFoundError: No module named 'django'`, the deployment package was copied but dependencies were not available at runtime.
+
+This branch fixes that by:
+
+- deploying only the `backend/` folder as the web root
+- bootstrapping a local `antenv` virtual environment in `startup.azure.sh`
+- installing `requirements.txt` before migrations and Gunicorn start
+
+Use this App Service startup command:
+
+```sh
+sh startup.azure.sh
+```
