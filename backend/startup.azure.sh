@@ -1,13 +1,6 @@
 #!/bin/sh
 set -e
 
-<<<<<<< HEAD
-python -m pip install -r requirements.txt
-python manage.py migrate --noinput
-python manage.py collectstatic --noinput
-gunicorn edaapp.wsgi --bind=0.0.0.0:${PORT:-8000}
-
-=======
 if [ ! -d "antenv" ]; then
   echo "Creating virtual environment..."
   python -m venv antenv
@@ -18,7 +11,6 @@ fi
 echo "Installing Python dependencies..."
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
->>>>>>> 598a3a0 (azureDeploy changes)
 
 echo "Applying migrations..."
 python manage.py migrate --noinput
