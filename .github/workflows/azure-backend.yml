@@ -5,13 +5,8 @@ on:
     branches:
       - azureDeploy
     paths:
-<<<<<<< HEAD
-      - 'backend/**'
-      - '.github/workflows/azure-backend.yml'
-=======
       - "backend/**"
       - ".github/workflows/azure-backend.yml"
->>>>>>> 598a3a0 (azureDeploy changes)
   workflow_dispatch:
 
 jobs:
@@ -22,14 +17,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-<<<<<<< HEAD
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-=======
->>>>>>> 598a3a0 (azureDeploy changes)
       - name: Prepare backend package
         run: |
           mkdir -p deploy
@@ -50,10 +37,6 @@ jobs:
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
         with:
-<<<<<<< HEAD
-          app-name: 'portfoliobackend'
-=======
           app-name: "portfoliobackend"
->>>>>>> 598a3a0 (azureDeploy changes)
           publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_PORTFOLIOBACKEND }}
           package: backend-deploy.zip
