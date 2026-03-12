@@ -1,0 +1,48 @@
+
+name: Azure Backend Deploy
+
+on:
+  push:
+    branches:
+      - azureDeploy
+    paths:
+      - "backend/**"
+      - ".github/workflows/azure-backend.yml"
+  workflow_dispatch:
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare backend package
+        run: |
+          mkdir -p deploy
+          rsync -av --delete backend/ deploy/
+
+      - name: Verify startup script content
+        run: |
+          wc -c deploy/startup.azure.sh
+          sed -n '1,20p' deploy/startup.azure.sh
+
+      - name: Verify backend package
+        run: |
+          ls -la deploy
+          test -f deploy/manage.py
+          test -f deploy/requirements.txt
+          test -f deploy/startup.azure.sh
+
+      - name: Zip backend package
+        run: |
+          cd deploy
+          zip -r ../backend-deploy.zip .
+
+      - name: Deploy to Azure Web App
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: "portfoliobackend"
+          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_PORTFOLIOBACKEND }}
+          package: backend-deploy.zip
