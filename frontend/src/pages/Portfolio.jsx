@@ -256,6 +256,15 @@ export default function Portfolio() {
     };
   }, [tradeOpen]);
 
+  useEffect(() => {
+    if (!selectedHoldingSymbol) return;
+    const onKeyDown = (e) => {
+      if (e.key === "Escape") closeStockDetail();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [selectedHoldingSymbol]);
+
   async function placeTrade() {
     setError("");
     try {
@@ -308,6 +317,12 @@ export default function Portfolio() {
     } finally {
       setStockDetailBusy(false);
     }
+  }
+
+  function closeStockDetail() {
+    setSelectedHoldingSymbol("");
+    setStockDetail(null);
+    setStockDetailBusy(false);
   }
 
   function logout() {
@@ -427,7 +442,7 @@ export default function Portfolio() {
               <div className="kpiValue">{holdings.length}</div>
             </div>
           </div>
-          <div className="table holdingsTable">
+          <div className="table holdingsTable desktopHoldingsTable">
             <div className="row head holdingsRow">
               <div data-label="Symbol">Symbol</div>
               <div data-label="Stock">Stock</div>
@@ -489,7 +504,37 @@ export default function Portfolio() {
             })}
           </div>
 
-          <div style={{ marginTop: 12 }}>
+          <div className="mobileHoldingsList">
+            {holdings.map((h) => (
+              <button
+                key={`mobile-${h.id}`}
+                type="button"
+                className="mobileHoldingItem"
+                onClick={() => openStockDetail(h.stock?.symbol)}
+                title="Tap to view stock details"
+              >
+                <div className="mobileHoldingMain">
+                  <div className="mobileHoldingText">
+                    <div className="strong mono">{h.stock?.symbol}</div>
+                    <div className="muted small">{h.stock?.name}</div>
+                  </div>
+                  <button
+                    className="btn danger sm mobileHoldingDelete"
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      removeHolding(h.id);
+                    }}
+                    title="Delete holding"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </button>
+            ))}
+          </div>
+
+          <div className="stockInlineHint" style={{ marginTop: 12 }}>
             <div className="muted small">Stock detail (click a holding)</div>
             {!selectedHoldingSymbol ? (
               <div className="muted" style={{ marginTop: 6 }}>
@@ -645,6 +690,79 @@ export default function Portfolio() {
           )}
         </section>
       </main>
+
+      {selectedHoldingSymbol ? (
+        <div className="stockDetailModalBackdrop" role="presentation" onClick={closeStockDetail}>
+          <div className="stockDetailModal" role="dialog" aria-modal="true" aria-label="Stock details" onClick={(e) => e.stopPropagation()}>
+            <div className="stockDetailModalHead">
+              <div>
+                <div className="strong mono">{selectedHoldingSymbol}</div>
+                <div className="muted small">{stockDetail?.fundamentals?.sector || "Stock detail"}</div>
+              </div>
+              <div className="stockDetailModalActions">
+                <div className="muted small">{stockDetailBusy ? "Loading..." : ""}</div>
+                <button className="stockDetailCloseBtn" type="button" onClick={closeStockDetail} aria-label="Close stock details">
+                  ×
+                </button>
+              </div>
+            </div>
+
+            {(() => {
+              const h = holdings.find((x) => String(x?.stock?.symbol || "") === String(selectedHoldingSymbol || ""));
+              const avg = toNum(h?.avg_buy_price);
+              const qtyNum = toNum(h?.qty);
+              const last = toNum(stockDetail?.quote?.last_price);
+              const low52 = toNum(stockDetail?.range_52w?.low_52w);
+              const high52 = toNum(stockDetail?.range_52w?.high_52w);
+              const discountPct =
+                last !== null && high52 !== null && high52 !== 0 ? round2(((high52 - last) / high52) * 100) : null;
+              const upnl =
+                last !== null && avg !== null && qtyNum !== null ? round2((last - avg) * qtyNum) : toNum(h?.unrealized_pnl);
+
+              return (
+                <>
+                  <div className="kpiRow" style={{ marginTop: 10 }}>
+                    <div className="kpi">
+                      <div className="kpiLabel">Min (365d)</div>
+                      <div className="kpiValue">{low52 === null ? "--" : fmt(low52)}</div>
+                    </div>
+                    <div className="kpi">
+                      <div className="kpiLabel">Max (365d)</div>
+                      <div className="kpiValue">{high52 === null ? "--" : fmt(high52)}</div>
+                    </div>
+                  </div>
+
+                  <div className="kpiRow" style={{ marginTop: 10 }}>
+                    <div className="kpi">
+                      <div className="kpiLabel">P/E Ratio</div>
+                      <div className="kpiValue">{fmt(stockDetail?.pe)}</div>
+                    </div>
+                    <div className="kpi">
+                      <div className="kpiLabel">Last Price</div>
+                      <div className="kpiValue">{fmt(last)}</div>
+                    </div>
+                  </div>
+
+                  <div className="kpiRow" style={{ marginTop: 10 }}>
+                    <div className="kpi">
+                      <div className="kpiLabel">Discount (from 52W high)</div>
+                      <div className={discountPct === null ? "kpiValue" : discountPct >= 0 ? "kpiValue pos" : "kpiValue neg"}>
+                        {discountPct === null ? "--" : `${fmt(discountPct)}%`}
+                      </div>
+                    </div>
+                    <div className="kpi">
+                      <div className="kpiLabel">U.PnL (vs Avg)</div>
+                      <div className={upnl === null ? "kpiValue" : upnl >= 0 ? "kpiValue pos" : "kpiValue neg"}>
+                        {upnl === null ? "--" : fmt(upnl)}
+                      </div>
+                    </div>
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+        </div>
+      ) : null}
 
       <Footer />
 

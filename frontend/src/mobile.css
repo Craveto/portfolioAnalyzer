@@ -46,24 +46,25 @@
 @media (max-width: 860px) {
   .mobileTabsBar {
     position: fixed;
-    left: 12px;
-    right: 12px;
-    bottom: max(12px, env(safe-area-inset-bottom));
+    left: 10px;
+    right: 10px;
+    bottom: max(10px, env(safe-area-inset-bottom));
     z-index: 950;
     display: grid;
     grid-template-columns: repeat(5, 1fr);
-    gap: 10px;
-    padding: 10px;
-    border-radius: 20px;
+    gap: 8px;
+    padding: 8px;
+    border-radius: 22px;
     border: 1px solid rgba(255, 255, 255, 0.14);
-    background: rgba(15, 18, 32, 0.72);
-    backdrop-filter: blur(14px);
-    box-shadow: 0 16px 60px rgba(0, 0, 0, 0.35);
+    background: rgba(15, 18, 32, 0.84);
+    backdrop-filter: blur(18px);
+    box-shadow: 0 18px 60px rgba(0, 0, 0, 0.38);
   }
 
   .mobileTab {
+    min-height: 58px;
     border-radius: 16px;
-    padding: 10px 8px;
+    padding: 9px 6px;
   }
 
   .navMobileBackdrop {
@@ -175,6 +176,24 @@
 
   .navMobile {
     width: 100%;
+  }
+
+  .mobileTabsBar {
+    left: 8px;
+    right: 8px;
+    bottom: max(8px, env(safe-area-inset-bottom));
+    gap: 6px;
+    padding: 7px;
+    border-radius: 20px;
+  }
+
+  .mobileTab {
+    min-height: 56px;
+    padding: 8px 4px;
+  }
+
+  .mobileTabLabel {
+    font-size: 10px;
   }
 
   .popoverCard {
