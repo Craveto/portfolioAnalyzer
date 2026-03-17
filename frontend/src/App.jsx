@@ -6,7 +6,34 @@ import Portfolio from "./pages/Portfolio.jsx";
 import Analysis from "./pages/Analysis.jsx";
 import Chart from "./pages/Chart.jsx";
 import Account from "./pages/Account.jsx";
-import { getToken } from "./api.js";
+import { api, getToken } from "./api.js";
+
+const DASHBOARD_CACHE_KEY = "dashboard_summary_cache_v1";
+const ACCOUNT_CACHE_KEY = "account_page_cache_v1";
+
+function saveJson(key, data) {
+  try {
+    localStorage.setItem(key, JSON.stringify({ savedAt: Date.now(), data }));
+  } catch {}
+}
+
+function savePortfolioBundle(portfolioId, bundle) {
+  try {
+    localStorage.setItem(`portfolioPage:${portfolioId}`, JSON.stringify({ ...bundle, cachedAt: Date.now() }));
+  } catch {}
+}
+
+function saveAnalysisBundle(portfolioId, bundle) {
+  try {
+    localStorage.setItem(`analysisPage:${portfolioId}`, JSON.stringify({ savedAt: Date.now(), ...bundle }));
+  } catch {}
+}
+
+function saveChartBundle(portfolioId, data) {
+  try {
+    localStorage.setItem(`chartPage:${portfolioId}`, JSON.stringify({ savedAt: Date.now(), data }));
+  } catch {}
+}
 
 function PrivateRoute({ children }) {
   return getToken() ? children : <Navigate to="/" replace />;
@@ -86,6 +113,80 @@ export default function App() {
   }, [introState]);
 
   const closeIntro = () => setIntroState((s) => (s === "hidden" || s === "exiting" ? s : "exiting"));
+
+  useEffect(() => {
+    if (!getToken()) return;
+    let alive = true;
+
+    async function warmApp() {
+      try {
+        const [summary, account, watchlist, alerts] = await Promise.all([
+          api.dashboardSummary(false).catch(() => null),
+          api.account().catch(() => null),
+          api.listWatchlist().catch(() => []),
+          api.listAlerts().catch(() => []),
+        ]);
+
+        if (!alive) return;
+
+        if (summary) saveJson(DASHBOARD_CACHE_KEY, summary);
+
+        let portfolios = summary?.portfolios || [];
+        if (!portfolios.length) {
+          portfolios = await api.listPortfolios().catch(() => []);
+        }
+
+        if (account) {
+          saveJson(ACCOUNT_CACHE_KEY, {
+            user: account.user,
+            profile: account.profile,
+            portfolios,
+            watchlist,
+            alerts,
+          });
+        }
+
+        const preferredPortfolioId =
+          summary?.profile?.default_portfolio?.id || portfolios?.[0]?.id || null;
+
+        if (!preferredPortfolioId) return;
+
+        const [portfolioData, peData, forecastData, txs] = await Promise.all([
+          api.getPortfolio(preferredPortfolioId).catch(() => null),
+          api.portfolioPE(preferredPortfolioId).catch(() => null),
+          api.portfolioForecast(preferredPortfolioId, 90).catch(() => null),
+          api.listTransactions(preferredPortfolioId).catch(() => []),
+        ]);
+
+        if (!alive) return;
+
+        const metricsBySymbol = {};
+        for (const item of peData?.holdings || []) {
+          if (item?.symbol) metricsBySymbol[String(item.symbol)] = item;
+        }
+
+        if (portfolioData) {
+          savePortfolioBundle(preferredPortfolioId, {
+            portfolio: portfolioData,
+            holdings: portfolioData.holdings || [],
+            transactions: txs || [],
+            holdingMetricsBySymbol: metricsBySymbol,
+          });
+        }
+        if (peData) {
+          saveAnalysisBundle(preferredPortfolioId, { data: peData, forecast: forecastData });
+          saveChartBundle(preferredPortfolioId, peData);
+        }
+      } catch {
+        // warmup is best-effort only
+      }
+    }
+
+    warmApp();
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   return (
     <>
