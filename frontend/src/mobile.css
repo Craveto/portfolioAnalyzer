@@ -85,6 +85,23 @@
   .navMobileActions {
     padding-bottom: 4px;
   }
+
+  .navMobileHead {
+    padding-bottom: 12px;
+    margin-bottom: 2px;
+  }
+
+  .navMobileTitle .strong {
+    font-size: 18px;
+    letter-spacing: 0.2px;
+  }
+
+  .navMobileClose {
+    width: 42px;
+    height: 42px;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.08);
+  }
 }
 
 @media (max-width: 720px) {
@@ -194,6 +211,15 @@
 
   .mobileTabLabel {
     font-size: 10px;
+  }
+
+  .navMobileUtilityRow {
+    grid-template-columns: 1fr;
+  }
+
+  .navMobileCloseWide,
+  .navMobileActionButtons > * {
+    width: 100%;
   }
 
   .popoverCard {
