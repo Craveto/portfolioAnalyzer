@@ -30,3 +30,7 @@ Thumbs.db
 
 # others files to ignore 
 development.txt 
+
+
+frontend/run_btc_frontend.err.log
+frontend/run_btc_frontend.log 

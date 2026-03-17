@@ -218,6 +218,50 @@ def _fundamentals_yahoo_http(ticker: str) -> dict:
     }
 
 
+def _quote_yahoo_http(ticker: str) -> dict:
+    url = "https://query1.finance.yahoo.com/v7/finance/quote"
+    headers = {"User-Agent": "Mozilla/5.0"}
+    try:
+        res = requests.get(url, params={"symbols": ticker}, headers=headers, timeout=15)
+        if res.status_code != 200:
+            return {}
+        data = res.json() if res.content else {}
+        result = (((data or {}).get("quoteResponse") or {}).get("result") or [None])[0] or {}
+    except Exception:
+        return {}
+
+    trailing_pe = _normalize_pe(result.get("trailingPE"))
+    forward_pe = _normalize_pe(result.get("forwardPE"))
+    price = _to_float(result.get("regularMarketPrice"))
+    trailing_eps = _to_float(result.get("epsTrailingTwelveMonths"))
+    forward_eps = _to_float(result.get("epsForward"))
+
+    if trailing_pe is None and price is not None and trailing_eps not in (None, 0):
+        trailing_pe = _normalize_pe(price / trailing_eps)
+    if forward_pe is None and price is not None and forward_eps not in (None, 0):
+        forward_pe = _normalize_pe(price / forward_eps)
+
+    return {
+        "ticker": ticker,
+        "trailingPE": trailing_pe,
+        "forwardPE": forward_pe,
+        "marketCap": _to_float(result.get("marketCap")),
+        "currency": result.get("currency"),
+        "regularMarketPrice": price,
+        "trailingEps": trailing_eps,
+        "forwardEps": forward_eps,
+    }
+
+
+def _alternate_indian_listing(ticker: str) -> str | None:
+    ticker = (ticker or "").strip().upper()
+    if ticker.endswith(".BO"):
+        return f"{ticker[:-3]}.NS"
+    if ticker.endswith(".NS"):
+        return f"{ticker[:-3]}.BO"
+    return None
+
+
 def download_daily(tickers: list[str], days: int = 5):
     key = f"dl:daily:{','.join(tickers)}:{days}"
     cached = _get_cached(key)
@@ -380,6 +424,28 @@ def get_fundamentals(ticker: str) -> dict:
             trailing_pe = http_data.get("trailingPE")
             forward_pe = http_data.get("forwardPE")
             info = _merge_fundamentals(info, http_data)
+
+    if trailing_pe is None and forward_pe is None:
+        quote_http = _quote_yahoo_http(ticker)
+        if quote_http:
+            trailing_pe = quote_http.get("trailingPE")
+            forward_pe = quote_http.get("forwardPE")
+            info = _merge_fundamentals(info, quote_http)
+
+    if trailing_pe is None and forward_pe is None:
+        alternate = _alternate_indian_listing(ticker)
+        if alternate:
+            alt_http = _fundamentals_yahoo_http(alternate)
+            if alt_http:
+                trailing_pe = alt_http.get("trailingPE")
+                forward_pe = alt_http.get("forwardPE")
+                info = _merge_fundamentals(info, alt_http)
+            if trailing_pe is None and forward_pe is None:
+                alt_quote = _quote_yahoo_http(alternate)
+                if alt_quote:
+                    trailing_pe = alt_quote.get("trailingPE")
+                    forward_pe = alt_quote.get("forwardPE")
+                    info = _merge_fundamentals(info, alt_quote)
 
     # Final fallback when auto mode is used and RapidAPI is configured:
     # if yfinance/HTTP gave no PE, try RapidAPI once more for hosted environments.
