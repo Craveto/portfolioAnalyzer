@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import os
+import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -296,6 +297,46 @@ def _alternate_indian_listing(ticker: str) -> str | None:
     return None
 
 
+def _fundamentals_screener_in(ticker: str) -> dict:
+    base = (ticker or "").strip().upper().split(".")[0]
+    if not base:
+        return {}
+
+    headers = {"User-Agent": "Mozilla/5.0"}
+    urls = [
+        f"https://www.screener.in/company/{base}/consolidated/",
+        f"https://www.screener.in/company/{base}/",
+    ]
+    patterns = [
+        r"Stock P/E\s*</[^>]+>\s*<[^>]+>\s*([0-9]+(?:\.[0-9]+)?)",
+        r"Stock P/E[^0-9]{0,120}([0-9]+(?:\.[0-9]+)?)",
+        r"P/E[^0-9]{0,80}([0-9]+(?:\.[0-9]+)?)",
+    ]
+
+    for url in urls:
+        try:
+            res = requests.get(url, headers=headers, timeout=15)
+            if res.status_code != 200 or not res.text:
+                continue
+            html = res.text
+        except Exception:
+            continue
+
+        for pattern in patterns:
+            m = re.search(pattern, html, flags=re.IGNORECASE)
+            if not m:
+                continue
+            pe = _normalize_pe(m.group(1))
+            if pe is not None:
+                return {
+                    "ticker": ticker,
+                    "trailingPE": pe,
+                    "forwardPE": None,
+                    "source": "screener.in",
+                }
+    return {}
+
+
 def download_daily(tickers: list[str], days: int = 5):
     key = f"dl:daily:{','.join(tickers)}:{days}"
     cached = _get_cached(key)
@@ -482,6 +523,13 @@ def get_fundamentals(ticker: str) -> dict:
                     trailing_pe = alt_quote.get("trailingPE")
                     forward_pe = alt_quote.get("forwardPE")
                     info = _merge_fundamentals(info, alt_quote)
+
+    if trailing_pe is None and forward_pe is None:
+        screener_data = _fundamentals_screener_in(ticker)
+        if screener_data:
+            trailing_pe = screener_data.get("trailingPE")
+            forward_pe = screener_data.get("forwardPE")
+            info = _merge_fundamentals(info, screener_data)
 
     # Final fallback when auto mode is used and RapidAPI is configured:
     # if yfinance/HTTP gave no PE, try RapidAPI once more for hosted environments.

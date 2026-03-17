@@ -81,8 +81,8 @@ export default function Account() {
   useEffect(() => {
     api
       .listPortfolios()
-      .then(setPortfolios)
       .then((list) => {
+        setPortfolios(list);
         saveAccountCache({ user: me, profile, portfolios: list, watchlist, alerts });
         return list;
       })
