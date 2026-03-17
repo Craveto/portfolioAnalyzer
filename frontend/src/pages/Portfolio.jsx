@@ -398,9 +398,9 @@ export default function Portfolio() {
 
       <main className="grid portfolioGrid">
         <section className="card">
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10 }}>
+          <div className="portfolioSectionHead">
             <h3 style={{ margin: 0 }}>Holdings</h3>
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+            <div className="portfolioSectionActions">
               <button className="btn primary sm" type="button" onClick={() => setTradeOpen(true)}>
                 + Add trade
               </button>
@@ -429,17 +429,17 @@ export default function Portfolio() {
           </div>
           <div className="table holdingsTable">
             <div className="row head holdingsRow">
-              <div>Symbol</div>
-              <div>Stock</div>
-              <div className="right">Qty</div>
-              <div className="right">Avg</div>
-              <div className="right">Last</div>
-              <div className="right">Min (365d)</div>
-              <div className="right">Max (365d)</div>
-              <div className="right">P/E</div>
-              <div className="right">Discount</div>
-              <div className="right">U.PnL</div>
-              <div className="right">Action</div>
+              <div data-label="Symbol">Symbol</div>
+              <div data-label="Stock">Stock</div>
+              <div className="right" data-label="Qty">Qty</div>
+              <div className="right" data-label="Avg">Avg</div>
+              <div className="right" data-label="Last">Last</div>
+              <div className="right" data-label="Min (365d)">Min (365d)</div>
+              <div className="right" data-label="Max (365d)">Max (365d)</div>
+              <div className="right" data-label="P/E">P/E</div>
+              <div className="right" data-label="Discount">Discount</div>
+              <div className="right" data-label="U.PnL">U.PnL</div>
+              <div className="right" data-label="Action">Action</div>
             </div>
             {holdings.map((h) => {
               const symbol = h.stock?.symbol ? String(h.stock.symbol) : "";
@@ -459,27 +459,27 @@ export default function Portfolio() {
                 onClick={() => openStockDetail(h.stock?.symbol)}
                 title="Click to view stock detail"
               >
-                <div className="mono">{h.stock?.symbol}</div>
-                <div>
+                <div className="mono" data-label="Symbol">{h.stock?.symbol}</div>
+                <div data-label="Stock">
                   <div>{h.stock?.name}</div>
                   <div className="muted small">
                     {sectorLabel}
                     {exLabel}
                   </div>
                 </div>
-                <div className="right">{h.qty}</div>
-                <div className="right">{avgNum === null ? "--" : fmt(avgNum)}</div>
-                <div className="right">
+                <div className="right" data-label="Qty">{h.qty}</div>
+                <div className="right" data-label="Avg">{avgNum === null ? "--" : fmt(avgNum)}</div>
+                <div className="right" data-label="Last">
                   <div>{fmt(h.last_price)}</div>
                 </div>
-                <div className="right">{low52 === null ? "--" : fmt(low52)}</div>
-                <div className="right">{high52 === null ? "--" : fmt(high52)}</div>
-                <div className="right">{pe === null ? "--" : fmt(pe)}</div>
-                <div className="right">{discountPct === null ? "--" : `${fmt(discountPct)}%`}</div>
-                <div className={toNum(h.unrealized_pnl) >= 0 ? "right pos" : "right neg"}>
+                <div className="right" data-label="Min (365d)">{low52 === null ? "--" : fmt(low52)}</div>
+                <div className="right" data-label="Max (365d)">{high52 === null ? "--" : fmt(high52)}</div>
+                <div className="right" data-label="P/E">{pe === null ? "--" : fmt(pe)}</div>
+                <div className="right" data-label="Discount">{discountPct === null ? "--" : `${fmt(discountPct)}%`}</div>
+                <div className={toNum(h.unrealized_pnl) >= 0 ? "right pos" : "right neg"} data-label="U.PnL">
                   {h.unrealized_pnl === null ? "--" : fmt(h.unrealized_pnl)}
                 </div>
-                <div className="right" onClick={(e) => e.stopPropagation()}>
+                <div className="right" data-label="Action" onClick={(e) => e.stopPropagation()}>
                   <button className="btn danger sm" onClick={() => removeHolding(h.id)} title="Delete holding row">
                     Delete
                   </button>
@@ -568,9 +568,9 @@ export default function Portfolio() {
         </section>
 
         <section className="card" style={{ gridColumn: "1 / -1" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12 }}>
+          <div className="portfolioSectionHead">
             <h3 style={{ margin: 0 }}>Transactions</h3>
-            <div className="segmented" style={{ marginTop: 0, width: 600, gridTemplateColumns: "1fr 1fr 1fr 1fr 1fr" }}>
+            <div className="segmented transactionsTabs">
               <button
                 className={activeBottomTab === "transactions" ? "seg active" : "seg"}
                 onClick={() => setActiveBottomTab("transactions")}
@@ -605,19 +605,19 @@ export default function Portfolio() {
               {transactions.length === 0 ? <div className="muted">No transactions yet.</div> : null}
               <div className="table">
                 <div className="row head" style={{ gridTemplateColumns: "1.2fr 1fr 0.8fr 0.9fr 1fr" }}>
-                  <div>Symbol</div>
-                  <div>Side</div>
-                  <div className="right">Qty</div>
-                  <div className="right">Price</div>
-                  <div className="right">Realized</div>
+                  <div data-label="Symbol">Symbol</div>
+                  <div data-label="Side">Side</div>
+                  <div className="right" data-label="Qty">Qty</div>
+                  <div className="right" data-label="Price">Price</div>
+                  <div className="right" data-label="Realized">Realized</div>
                 </div>
                 {transactions.map((t) => (
                   <div className="row" key={t.id} style={{ gridTemplateColumns: "1.2fr 1fr 0.8fr 0.9fr 1fr" }}>
-                    <div className="mono">{t.stock?.symbol}</div>
-                    <div className={t.side === "BUY" ? "pos" : "neg"}>{t.side}</div>
-                    <div className="right">{t.qty}</div>
-                    <div className="right">{fmt(t.price)}</div>
-                    <div className={toNum(t.realized_pnl) >= 0 ? "right pos" : "right neg"}>{fmt(t.realized_pnl)}</div>
+                    <div className="mono" data-label="Symbol">{t.stock?.symbol}</div>
+                    <div className={t.side === "BUY" ? "pos" : "neg"} data-label="Side">{t.side}</div>
+                    <div className="right" data-label="Qty">{t.qty}</div>
+                    <div className="right" data-label="Price">{fmt(t.price)}</div>
+                    <div className={toNum(t.realized_pnl) >= 0 ? "right pos" : "right neg"} data-label="Realized">{fmt(t.realized_pnl)}</div>
                   </div>
                 ))}
               </div>

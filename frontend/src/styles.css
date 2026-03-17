@@ -1352,6 +1352,27 @@ a {
   grid-template-columns: 1.05fr 2fr 0.7fr 0.8fr 0.85fr 0.9fr 0.9fr 0.65fr 0.85fr 0.9fr 0.8fr;
 }
 
+.portfolioSectionHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.portfolioSectionActions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.transactionsTabs {
+  margin-top: 0;
+  width: min(100%, 640px);
+  grid-template-columns: repeat(5, minmax(88px, 1fr));
+}
+
 .pos {
   color: var(--pos);
 }
@@ -1444,27 +1465,130 @@ a {
 }
 
 @media (max-width: 560px) {
+  .page {
+    padding: 12px;
+  }
+
+  .card {
+    padding: 12px;
+    border-radius: 16px;
+  }
+
+  .header {
+    padding: 10px;
+  }
+
+  .brand {
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .brandTitle {
+    font-size: 15px;
+  }
+
+  .brandSub {
+    font-size: 11px;
+  }
+
+  .themeBtn {
+    min-width: auto;
+    height: 38px;
+    padding: 0 10px;
+  }
+
+  .themeBtnLabel {
+    font-size: 10px;
+  }
+
+  .portfolioSectionHead {
+    align-items: stretch;
+  }
+
+  .portfolioSectionActions {
+    width: 100%;
+  }
+
+  .portfolioSectionActions .btn {
+    flex: 1 1 0;
+    justify-content: center;
+  }
+
+  .kpiRow {
+    grid-template-columns: 1fr;
+  }
+
   .twoCol {
     grid-template-columns: 1fr;
   }
-  .row {
-    grid-template-columns: 1.1fr 1.4fr 0.7fr;
+
+  .table {
+    border: none;
+    background: transparent;
+    overflow: visible;
   }
-  .row > div:nth-child(4),
-  .row > div:nth-child(5) {
+
+  .row.head {
     display: none;
   }
 
+  .row,
   .holdingsRow {
-    grid-template-columns: 1.1fr 1.6fr 0.85fr 0.9fr 0.8fr;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px 12px;
+    padding: 12px;
+    margin-top: 10px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.04);
   }
-  .holdingsRow > div:nth-child(4),
-  .holdingsRow > div:nth-child(6),
-  .holdingsRow > div:nth-child(7),
-  .holdingsRow > div:nth-child(8),
-  .holdingsRow > div:nth-child(9),
-  .holdingsRow > div:nth-child(10) {
-    display: none;
+
+  .row > div,
+  .holdingsRow > div {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  .row > div::before,
+  .holdingsRow > div::before {
+    content: attr(data-label);
+    font-size: 11px;
+    line-height: 1.1;
+    color: var(--muted);
+    font-weight: 700;
+  }
+
+  .row > div.right,
+  .holdingsRow > div.right {
+    justify-self: stretch;
+    align-items: flex-start;
+    text-align: left;
+  }
+
+  .holdingsRow > div:nth-child(2),
+  .row > div:first-child {
+    grid-column: 1 / -1;
+  }
+
+  .holdingsRow > div:last-child {
+    grid-column: 1 / -1;
+  }
+
+  .holdingsRow .btn,
+  .row .btn {
+    width: 100%;
+  }
+
+  .transactionsTabs {
+    width: 100%;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .transactionsTabs .seg:last-child {
+    grid-column: 1 / -1;
   }
 
   .searchItemRow {
@@ -1481,6 +1605,30 @@ a {
   .statPill {
     min-width: 92px;
     text-align: left;
+  }
+
+  .siteFooter {
+    padding: 12px;
+  }
+
+  .footerTop {
+    gap: 12px;
+  }
+
+  .footerGrid {
+    display: none;
+  }
+
+  .footerMeta {
+    flex-wrap: wrap;
+  }
+
+  .footerBottom {
+    margin-top: 12px;
+    padding-top: 12px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
   }
 }
 
