@@ -184,8 +184,9 @@ export const api = {
   createPortfolio({ name }) {
     return apiFetch("/api/portfolios/", { method: "POST", body: { name }, auth: true });
   },
-  getPortfolio(portfolioId) {
-    return apiFetch(`/api/portfolios/${portfolioId}/`, { auth: true });
+  getPortfolio(portfolioId, force = false) {
+    const qs = force ? "?force=1" : "";
+    return apiFetch(`/api/portfolios/${portfolioId}/${qs}`, { auth: true });
   },
   deletePortfolio(portfolioId) {
     return apiFetch(`/api/portfolios/${portfolioId}/`, { method: "DELETE", auth: true });
@@ -203,8 +204,9 @@ export const api = {
   deleteHolding(portfolioId, holdingId) {
     return apiFetch(`/api/portfolios/${portfolioId}/holdings/${holdingId}/`, { method: "DELETE", auth: true });
   },
-  portfolioPE(portfolioId) {
-    return apiFetch(`/api/analysis/portfolio/${portfolioId}/pe/`, { auth: true });
+  portfolioPE(portfolioId, force = false) {
+    const qs = force ? "?force=1" : "";
+    return apiFetch(`/api/analysis/portfolio/${portfolioId}/pe/${qs}`, { auth: true });
   },
   portfolioForecast(portfolioId, days = 90) {
     return apiFetch(`/api/analysis/portfolio/${portfolioId}/forecast/?days=${encodeURIComponent(days)}`, { auth: true });

@@ -360,6 +360,109 @@ def _refresh_cached_market_summary(cache_key: str, top_universe: list[str]) -> N
         close_old_connections()
 
 
+def _compute_portfolio_snapshot(portfolio: Portfolio) -> dict:
+    data = PortfolioSerializer(portfolio).data
+    holdings = Holding.objects.filter(portfolio=portfolio).select_related("stock", "stock__sector").order_by("stock__symbol")
+    holdings_data = HoldingSerializer(holdings, many=True).data
+
+    realized_total = Transaction.objects.filter(portfolio=portfolio, side="SELL").values_list("realized_pnl", flat=True)
+    try:
+        data["realized_pnl_total"] = str(sum((Decimal(str(x)) for x in realized_total), Decimal("0")))
+    except Exception:
+        data["realized_pnl_total"] = "0"
+
+    symbols = [h.stock.symbol for h in holdings]
+    quotes: dict[str, dict] = {}
+    for symbol in symbols:
+        try:
+            quotes[symbol] = get_fast_quote(symbol)
+        except Exception:
+            quotes[symbol] = {"ticker": symbol, "last_price": None}
+
+    for item in holdings_data:
+        symbol = item.get("stock", {}).get("symbol")
+        quote = quotes.get(symbol or "", {})
+        last_price = quote.get("last_price")
+        item["last_price"] = last_price
+        try:
+            qty = Decimal(str(item.get("qty", "0")))
+            avg = Decimal(str(item.get("avg_buy_price", "0")))
+            if last_price is None:
+                item["unrealized_pnl"] = None
+            else:
+                lp = Decimal(str(last_price))
+                item["unrealized_pnl"] = str((lp - avg) * qty)
+        except Exception:
+            item["unrealized_pnl"] = None
+
+    data["holdings"] = holdings_data
+    return data
+
+
+def warm_portfolio_snapshot_cache(portfolio: Portfolio, force: bool = False, fresh_seconds: int = 45) -> dict:
+    now = timezone.now()
+    cache_key = f"portfolio_snapshot:{portfolio.id}"
+    snapshot = CachedPayload.objects.filter(key=cache_key).first()
+    if snapshot and not force:
+        age_seconds = (now - snapshot.updated_at).total_seconds()
+        payload = dict(snapshot.payload or {})
+        payload["meta"] = {
+            "source": "snapshot",
+            "updated_at": snapshot.updated_at.isoformat(),
+            "stale": age_seconds > fresh_seconds,
+            "age_seconds": round(age_seconds, 1),
+        }
+        return payload
+
+    try:
+        payload = _compute_portfolio_snapshot(portfolio)
+        snapshot, _ = CachedPayload.objects.update_or_create(key=cache_key, defaults={"payload": payload})
+        payload["meta"] = {
+            "source": "fresh",
+            "updated_at": snapshot.updated_at.isoformat(),
+            "stale": False,
+            "age_seconds": 0,
+        }
+        return payload
+    except Exception:
+        if snapshot:
+            age_seconds = (now - snapshot.updated_at).total_seconds()
+            payload = dict(snapshot.payload or {})
+            payload["meta"] = {
+                "source": "snapshot",
+                "updated_at": snapshot.updated_at.isoformat(),
+                "stale": True,
+                "age_seconds": round(age_seconds, 1),
+            }
+            return payload
+        raise
+
+
+def _refresh_cached_portfolio_snapshot(portfolio_id: int, user_id: int, fresh_seconds: int = 45) -> None:
+    close_old_connections()
+    try:
+        portfolio = Portfolio.objects.filter(id=portfolio_id, user_id=user_id).first()
+        if portfolio:
+            warm_portfolio_snapshot_cache(portfolio=portfolio, force=True, fresh_seconds=fresh_seconds)
+    except Exception:
+        pass
+    finally:
+        cache_key = f"portfolio_snapshot:{portfolio_id}"
+        with _refresh_lock:
+            _refresh_flags[cache_key] = False
+        close_old_connections()
+
+
+def _start_portfolio_snapshot_refresh(portfolio_id: int, user_id: int, fresh_seconds: int = 45) -> None:
+    cache_key = f"portfolio_snapshot:{portfolio_id}"
+    with _refresh_lock:
+        if _refresh_flags.get(cache_key):
+            return
+        _refresh_flags[cache_key] = True
+    t = threading.Thread(target=_refresh_cached_portfolio_snapshot, args=(portfolio_id, user_id, fresh_seconds), daemon=True)
+    t.start()
+
+
 def _start_market_refresh(cache_key: str, top_universe: list[str]) -> None:
     with _refresh_lock:
         if _refresh_flags.get(cache_key):
@@ -637,43 +740,11 @@ class PortfoliosListCreateView(APIView):
 class PortfoliosRetrieveDestroyView(APIView):
     def get(self, request, portfolio_id: int):
         portfolio = Portfolio.objects.get(id=portfolio_id, user=request.user)
-        data = PortfolioSerializer(portfolio).data
-        holdings = Holding.objects.filter(portfolio=portfolio).select_related("stock", "stock__sector").order_by("stock__symbol")
-        holdings_data = HoldingSerializer(holdings, many=True).data
-
-        realized_total = Transaction.objects.filter(portfolio=portfolio, side="SELL").values_list("realized_pnl", flat=True)
-        try:
-            data["realized_pnl_total"] = str(sum((Decimal(str(x)) for x in realized_total), Decimal("0")))
-        except Exception:
-            data["realized_pnl_total"] = "0"
-
-        # Best-effort live quote enrichment (cached).
-        symbols = [h.stock.symbol for h in holdings]
-        quotes = {}
-        for s in symbols:
-            try:
-                quotes[s] = get_fast_quote(s)
-            except Exception:
-                quotes[s] = {"ticker": s, "last_price": None}
-
-        for item in holdings_data:
-            symbol = item.get("stock", {}).get("symbol")
-            last_price = None
-            if symbol and symbol in quotes:
-                last_price = quotes[symbol].get("last_price")
-            item["last_price"] = last_price
-            try:
-                qty = Decimal(str(item.get("qty", "0")))
-                avg = Decimal(str(item.get("avg_buy_price", "0")))
-                if last_price is None:
-                    item["unrealized_pnl"] = None
-                else:
-                    lp = Decimal(str(last_price))
-                    item["unrealized_pnl"] = str((lp - avg) * qty)
-            except Exception:
-                item["unrealized_pnl"] = None
-
-        data["holdings"] = holdings_data
+        force = request.query_params.get("force") == "1"
+        data = warm_portfolio_snapshot_cache(portfolio=portfolio, force=force, fresh_seconds=45)
+        meta = data.get("meta") or {}
+        if not force and meta.get("source") == "snapshot" and meta.get("stale"):
+            _start_portfolio_snapshot_refresh(portfolio.id, request.user.id, fresh_seconds=45)
         return Response(data)
 
     def delete(self, request, portfolio_id: int):

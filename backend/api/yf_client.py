@@ -8,6 +8,9 @@ from pathlib import Path
 
 import yfinance as yf
 import requests
+from django.utils import timezone
+
+from .models import CachedPayload
 
 
 def _configure_yfinance_cache() -> None:
@@ -45,6 +48,37 @@ def _get_cached(key: str):
 
 def _set_cached(key: str, value: object, ttl_seconds: int) -> None:
     _cache[key] = CacheEntry(expires_at=time.time() + ttl_seconds, value=value)
+
+
+def _fundamentals_snapshot_key(ticker: str) -> str:
+    return f"fund_snapshot:{(ticker or '').strip().upper()}"
+
+
+def _load_persistent_fundamentals(ticker: str, max_age_seconds: int | None = None) -> dict | None:
+    try:
+        snap = CachedPayload.objects.filter(key=_fundamentals_snapshot_key(ticker)).first()
+        if not snap:
+            return None
+        if max_age_seconds is not None:
+            age = (timezone.now() - snap.updated_at).total_seconds()
+            if age > max_age_seconds:
+                return None
+        payload = snap.payload or {}
+        return payload if isinstance(payload, dict) else None
+    except Exception:
+        return None
+
+
+def _save_persistent_fundamentals(ticker: str, payload: dict) -> None:
+    if not isinstance(payload, dict):
+        return
+    try:
+        CachedPayload.objects.update_or_create(
+            key=_fundamentals_snapshot_key(ticker),
+            defaults={"payload": payload},
+        )
+    except Exception:
+        pass
 
 def _to_float(v):
     try:
@@ -218,6 +252,50 @@ def _fundamentals_yahoo_http(ticker: str) -> dict:
     }
 
 
+def _quote_yahoo_http(ticker: str) -> dict:
+    url = "https://query1.finance.yahoo.com/v7/finance/quote"
+    headers = {"User-Agent": "Mozilla/5.0"}
+    try:
+        res = requests.get(url, params={"symbols": ticker}, headers=headers, timeout=15)
+        if res.status_code != 200:
+            return {}
+        data = res.json() if res.content else {}
+        result = (((data or {}).get("quoteResponse") or {}).get("result") or [None])[0] or {}
+    except Exception:
+        return {}
+
+    trailing_pe = _normalize_pe(result.get("trailingPE"))
+    forward_pe = _normalize_pe(result.get("forwardPE"))
+    price = _to_float(result.get("regularMarketPrice"))
+    trailing_eps = _to_float(result.get("epsTrailingTwelveMonths"))
+    forward_eps = _to_float(result.get("epsForward"))
+
+    if trailing_pe is None and price is not None and trailing_eps not in (None, 0):
+        trailing_pe = _normalize_pe(price / trailing_eps)
+    if forward_pe is None and price is not None and forward_eps not in (None, 0):
+        forward_pe = _normalize_pe(price / forward_eps)
+
+    return {
+        "ticker": ticker,
+        "trailingPE": trailing_pe,
+        "forwardPE": forward_pe,
+        "marketCap": _to_float(result.get("marketCap")),
+        "currency": result.get("currency"),
+        "regularMarketPrice": price,
+        "trailingEps": trailing_eps,
+        "forwardEps": forward_eps,
+    }
+
+
+def _alternate_indian_listing(ticker: str) -> str | None:
+    ticker = (ticker or "").strip().upper()
+    if ticker.endswith(".BO"):
+        return f"{ticker[:-3]}.NS"
+    if ticker.endswith(".NS"):
+        return f"{ticker[:-3]}.BO"
+    return None
+
+
 def download_daily(tickers: list[str], days: int = 5):
     key = f"dl:daily:{','.join(tickers)}:{days}"
     cached = _get_cached(key)
@@ -320,6 +398,8 @@ def get_fundamentals(ticker: str) -> dict:
     if cached is not None:
         return cached
 
+    persistent = _load_persistent_fundamentals(ticker, max_age_seconds=7 * 24 * 3600)
+
     provider = (os.getenv("FUNDAMENTALS_PROVIDER") or "auto").strip().lower()
     prefer_rapid = provider in ("rapidapi", "rapidapi_yahoo", "rapidapi_yahoo_finance") or (provider == "auto" and _has_rapidapi_key())
     prefer_yfinance_only = provider in ("yfinance", "yf")
@@ -381,6 +461,28 @@ def get_fundamentals(ticker: str) -> dict:
             forward_pe = http_data.get("forwardPE")
             info = _merge_fundamentals(info, http_data)
 
+    if trailing_pe is None and forward_pe is None:
+        quote_http = _quote_yahoo_http(ticker)
+        if quote_http:
+            trailing_pe = quote_http.get("trailingPE")
+            forward_pe = quote_http.get("forwardPE")
+            info = _merge_fundamentals(info, quote_http)
+
+    if trailing_pe is None and forward_pe is None:
+        alternate = _alternate_indian_listing(ticker)
+        if alternate:
+            alt_http = _fundamentals_yahoo_http(alternate)
+            if alt_http:
+                trailing_pe = alt_http.get("trailingPE")
+                forward_pe = alt_http.get("forwardPE")
+                info = _merge_fundamentals(info, alt_http)
+            if trailing_pe is None and forward_pe is None:
+                alt_quote = _quote_yahoo_http(alternate)
+                if alt_quote:
+                    trailing_pe = alt_quote.get("trailingPE")
+                    forward_pe = alt_quote.get("forwardPE")
+                    info = _merge_fundamentals(info, alt_quote)
+
     # Final fallback when auto mode is used and RapidAPI is configured:
     # if yfinance/HTTP gave no PE, try RapidAPI once more for hosted environments.
     if trailing_pe is None and forward_pe is None and not prefer_rapid and _has_rapidapi_key():
@@ -400,9 +502,14 @@ def get_fundamentals(ticker: str) -> dict:
         "currency": info.get("currency"),
     }
 
+    if (fundamentals.get("trailingPE") is None and fundamentals.get("forwardPE") is None) and persistent:
+        fundamentals = _merge_fundamentals(persistent, fundamentals)
+
     # Cache shorter when info is missing to avoid "sticky" zeros/nulls during transient Yahoo issues.
     ttl = 300 if (info and (trailing_pe is not None or forward_pe is not None)) else 60
     _set_cached(key, fundamentals, ttl_seconds=ttl)
+    if fundamentals.get("trailingPE") is not None or fundamentals.get("forwardPE") is not None:
+        _save_persistent_fundamentals(ticker, fundamentals)
     return fundamentals
 
 

@@ -45,6 +45,27 @@ function saveRecent(symbol) {
   } catch {}
 }
 
+function portfolioCacheKey(portfolioId) {
+  return `portfolioPage:${portfolioId}`;
+}
+
+function readPortfolioCache(portfolioId) {
+  try {
+    const raw = localStorage.getItem(portfolioCacheKey(portfolioId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function writePortfolioCache(portfolioId, payload) {
+  try {
+    localStorage.setItem(portfolioCacheKey(portfolioId), JSON.stringify({ ...payload, cachedAt: Date.now() }));
+  } catch {}
+}
+
 export default function Portfolio() {
   const { id } = useParams();
   const portfolioId = Number(id);
@@ -91,16 +112,16 @@ export default function Portfolio() {
     });
   }, [portfolioId]);
 
-  async function refresh() {
+  async function refresh(force = false) {
     const isAuthErr = (e) => {
       const msg = String(e?.message || "");
       return msg.includes("HTTP 401") || msg.includes("HTTP 403");
     };
 
-    const portfolioPromise = api.getPortfolio(portfolioId);
+    const portfolioPromise = api.getPortfolio(portfolioId, force);
     const transactionsPromise = api.listTransactions(portfolioId);
     const metricsPromise = api
-      .portfolioPE(portfolioId)
+      .portfolioPE(portfolioId, force)
       .then((d) => d)
       .catch((e) => {
         if (isAuthErr(e)) throw e;
@@ -118,9 +139,30 @@ export default function Portfolio() {
       if (item?.symbol) nextMetrics[String(item.symbol)] = item;
     }
     setHoldingMetricsBySymbol(nextMetrics);
+    writePortfolioCache(portfolioId, {
+      portfolio: data,
+      holdings: data.holdings || [],
+      transactions: txs || [],
+      holdingMetricsBySymbol: nextMetrics
+    });
+
+    if (!force && (data?.meta?.stale || metrics?.meta?.stale)) {
+      window.setTimeout(() => {
+        refresh(true).catch(() => {});
+      }, 0);
+    }
   }
 
   useEffect(() => {
+    const cached = readPortfolioCache(portfolioId);
+    if (cached) {
+      if (cached.portfolio) setPortfolio(cached.portfolio);
+      if (Array.isArray(cached.holdings)) setHoldings(cached.holdings);
+      if (Array.isArray(cached.transactions)) setTransactions(cached.transactions);
+      if (cached.holdingMetricsBySymbol && typeof cached.holdingMetricsBySymbol === "object") {
+        setHoldingMetricsBySymbol(cached.holdingMetricsBySymbol);
+      }
+    }
     refresh().catch(() => {
       clearTokens();
       nav("/");
@@ -231,7 +273,7 @@ export default function Portfolio() {
       });
       saveRecent(selectedSymbol);
       setRecentSymbols(loadRecent());
-      await refresh();
+      await refresh(true);
       setQ("");
       setSelectedSymbol("");
       setSelectedName("");
@@ -246,6 +288,7 @@ export default function Portfolio() {
     try {
       await api.deleteHolding(portfolioId, holdingId);
       setHoldings((prev) => prev.filter((h) => h.id !== holdingId));
+      await refresh(true);
     } catch (e) {
       setError(e.message || "Failed to delete");
     }
