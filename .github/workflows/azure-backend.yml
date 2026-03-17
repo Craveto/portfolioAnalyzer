@@ -1,4 +1,7 @@
+<<<<<<< HEAD
 
+=======
+>>>>>>> 32f4a9d (Add BTC live module with prediction views)
 name: Azure Backend Deploy
 
 on:
@@ -23,11 +26,14 @@ jobs:
           mkdir -p deploy
           rsync -av --delete backend/ deploy/
 
+<<<<<<< HEAD
       - name: Verify startup script content
         run: |
           wc -c deploy/startup.azure.sh
           sed -n '1,20p' deploy/startup.azure.sh
 
+=======
+>>>>>>> 32f4a9d (Add BTC live module with prediction views)
       - name: Verify backend package
         run: |
           ls -la deploy
@@ -35,6 +41,14 @@ jobs:
           test -f deploy/requirements.txt
           test -f deploy/startup.azure.sh
 
+<<<<<<< HEAD
+=======
+      - name: Verify startup script content
+        run: |
+          wc -c deploy/startup.azure.sh
+          sed -n '1,20p' deploy/startup.azure.sh
+
+>>>>>>> 32f4a9d (Add BTC live module with prediction views)
       - name: Zip backend package
         run: |
           cd deploy

@@ -1,4 +1,9 @@
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+const configuredApiBase = (import.meta.env.VITE_API_BASE_URL || "").trim();
+const API_BASE = configuredApiBase || (import.meta.env.DEV ? "http://localhost:8000" : "");
+
+if (!configuredApiBase && !import.meta.env.DEV) {
+  console.warn("VITE_API_BASE_URL is not set for this production build; frontend will use same-origin /api paths.");
+}
 
 export function getToken() {
   return localStorage.getItem("authToken");
@@ -101,6 +106,18 @@ export const api = {
   },
   metalsForecast(horizon = "1w") {
     return apiFetch(`/api/market/metals/forecast/?horizon=${encodeURIComponent(String(horizon))}`);
+  },
+  btcSummary(days = 30) {
+    return apiFetch(`/api/market/btc/summary/?days=${encodeURIComponent(String(days))}`);
+  },
+  btcNews(limit = 6) {
+    return apiFetch(`/api/market/btc/news/?limit=${encodeURIComponent(String(limit))}`);
+  },
+  btcQuote(ttl = 20) {
+    return apiFetch(`/api/market/btc/quote/?ttl=${encodeURIComponent(String(ttl))}`);
+  },
+  btcPredictions(horizon = "1m") {
+    return apiFetch(`/api/market/btc/predictions/?horizon=${encodeURIComponent(String(horizon))}`);
   },
   quote(symbol) {
     return apiFetch(`/api/market/quote/?symbol=${encodeURIComponent(symbol)}`);

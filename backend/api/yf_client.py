@@ -881,3 +881,361 @@ def metals_forecast(horizon: str = "1w") -> dict:
     }
     _set_cached(key, payload, ttl_seconds=ttl)
     return payload
+
+
+def _series_close(sym: str, period: str, interval: str = "1d", limit: int | None = None) -> list[dict]:
+    out: list[dict] = []
+    try:
+        df = yf.Ticker(sym).history(period=period, interval=interval)
+        closes = df.get("Close") if df is not None else None
+        if closes is None:
+            return []
+        s = closes.dropna()
+        if limit:
+            s = s.tail(limit)
+        for idx, val in s.items():
+            try:
+                ds = idx.isoformat() if hasattr(idx, "isoformat") else str(idx)
+                out.append({"date": ds, "close": float(val)})
+            except Exception:
+                continue
+    except Exception:
+        return []
+    return out
+
+
+def _simple_returns(vals: list[float]) -> list[float]:
+    out: list[float] = []
+    for a, b in zip(vals[:-1], vals[1:]):
+        try:
+            if a:
+                out.append((b - a) / a)
+        except Exception:
+            continue
+    return out
+
+
+def _mean(vals: list[float]) -> float | None:
+    return (sum(vals) / len(vals)) if vals else None
+
+
+def _std(vals: list[float]) -> float | None:
+    if len(vals) < 2:
+        return None
+    m = _mean(vals)
+    if m is None:
+        return None
+    var = sum((v - m) ** 2 for v in vals) / (len(vals) - 1)
+    return var ** 0.5
+
+
+def _pearson(a: list[float], b: list[float]) -> float | None:
+    if len(a) < 3 or len(a) != len(b):
+        return None
+    ma = _mean(a)
+    mb = _mean(b)
+    if ma is None or mb is None:
+        return None
+    num = sum((x - ma) * (y - mb) for x, y in zip(a, b))
+    den_a = sum((x - ma) ** 2 for x in a) ** 0.5
+    den_b = sum((y - mb) ** 2 for y in b) ** 0.5
+    if not den_a or not den_b:
+        return None
+    return num / (den_a * den_b)
+
+
+def btc_quote_fast(ttl_seconds: int = 20) -> dict:
+    ttl_seconds = max(10, min(60, int(ttl_seconds or 20)))
+    key = f"btc:quote:{ttl_seconds}"
+    cached = _get_cached(key)
+    if cached is not None:
+        return cached
+
+    sym = (os.getenv("BTC_TICKER") or "BTC-USD").strip() or "BTC-USD"
+    q = get_fast_quote(sym)
+    out = {
+        "ticker": sym,
+        "last_price": q.get("last_price"),
+        "previous_close": q.get("previous_close"),
+        "currency": q.get("currency") or "USD",
+        "time_zone": q.get("time_zone"),
+        "cached_for_s": ttl_seconds,
+    }
+    _set_cached(key, out, ttl_seconds=ttl_seconds)
+    return out
+
+
+def btc_news(limit: int = 6) -> list[dict]:
+    limit = max(3, min(12, int(limit or 6)))
+    key = f"btc:news:{limit}"
+    cached = _get_cached(key)
+    if cached is not None:
+        return cached
+
+    sym = (os.getenv("BTC_TICKER") or "BTC-USD").strip() or "BTC-USD"
+    items: list[dict] = []
+    try:
+        news = getattr(yf.Ticker(sym), "news", None) or []
+        for n in news:
+            title = n.get("title") or ""
+            link = n.get("link") or n.get("url") or ""
+            if not title or not link:
+                continue
+            items.append(
+                {
+                    "title": title,
+                    "publisher": n.get("publisher") or "",
+                    "link": link,
+                    "published_at": n.get("providerPublishTime"),
+                    "source": sym,
+                }
+            )
+    except Exception:
+        items = []
+
+    deduped = []
+    seen: set[str] = set()
+    for it in sorted(items, key=lambda x: x.get("published_at") or 0, reverse=True):
+        title = it.get("title") or ""
+        if title in seen:
+            continue
+        seen.add(title)
+        deduped.append(it)
+        if len(deduped) >= limit:
+            break
+
+    _set_cached(key, deduped, ttl_seconds=600)
+    return deduped
+
+
+def btc_summary(days: int = 30) -> dict:
+    days = max(7, min(90, int(days or 30)))
+    key = f"btc:summary:{days}"
+    cached = _get_cached(key)
+    if cached is not None:
+        return cached
+
+    sym = (os.getenv("BTC_TICKER") or "BTC-USD").strip() or "BTC-USD"
+    quote = btc_quote_fast(ttl_seconds=20)
+    series = _series_close(sym, period=f"{max(days + 15, 45)}d", interval="1d", limit=days)
+    vals = [p["close"] for p in series if p.get("close") is not None]
+
+    intraday = _series_close(sym, period="5d", interval="1h", limit=36)
+    intra_vals = [p["close"] for p in intraday if p.get("close") is not None]
+    y52 = _series_close(sym, period="1y", interval="1d")
+    y52_vals = [p["close"] for p in y52 if p.get("close") is not None]
+    long_hist = _series_close(sym, period="5y", interval="1d")
+    long_vals = [p["close"] for p in long_hist if p.get("close") is not None]
+
+    returns = _simple_returns(vals)
+    last = quote.get("last_price")
+    prev = quote.get("previous_close")
+    day_change_pct = ((last - prev) / prev) * 100.0 if last is not None and prev not in (None, 0) else None
+    vol_30d = (_std(returns) or 0.0) * (365 ** 0.5) * 100.0 if returns else None
+
+    # correlations against common risk/barometer assets
+    bench_syms = {
+        "gold": (os.getenv("METALS_GOLD_FALLBACK") or "GC=F").strip() or "GC=F",
+        "silver": (os.getenv("METALS_SILVER_FALLBACK") or "SI=F").strip() or "SI=F",
+        "nasdaq": "^IXIC",
+        "nifty": "^NSEI",
+    }
+    corr_rows = []
+    for label, bsym in bench_syms.items():
+        bench = _series_close(bsym, period="90d", interval="1d", limit=60)
+        bmap = {p["date"][:10]: p["close"] for p in bench}
+        smap = {p["date"][:10]: p["close"] for p in series}
+        dates = sorted(set(bmap.keys()) & set(smap.keys()))
+        btc_aligned = [float(smap[d]) for d in dates if smap.get(d) is not None and bmap.get(d) is not None]
+        bench_aligned = [float(bmap[d]) for d in dates if smap.get(d) is not None and bmap.get(d) is not None]
+        corr = None
+        if len(btc_aligned) >= 5 and len(btc_aligned) == len(bench_aligned):
+            corr = _pearson(_simple_returns(btc_aligned), _simple_returns(bench_aligned))
+        corr_rows.append({"label": label.title(), "symbol": bsym, "correlation": corr})
+
+    payload = {
+        "ticker": sym,
+        "quote": quote,
+        "series": series,
+        "records": {
+            "day_high": max(intra_vals) if intra_vals else None,
+            "day_low": min(intra_vals) if intra_vals else None,
+            "high_30d": max(vals) if vals else None,
+            "low_30d": min(vals) if vals else None,
+            "high_52w": max(y52_vals) if y52_vals else None,
+            "low_52w": min(y52_vals) if y52_vals else None,
+            "ath_5y": max(long_vals) if long_vals else None,
+        },
+        "metrics": {
+            "day_change_pct": day_change_pct,
+            "return_30d_pct": (((vals[-1] - vals[0]) / vals[0]) * 100.0) if len(vals) >= 2 and vals[0] else None,
+            "volatility_30d_annualized_pct": vol_30d,
+            "support_zone": min(vals[-10:]) if len(vals) >= 10 else (min(vals) if vals else None),
+            "resistance_zone": max(vals[-10:]) if len(vals) >= 10 else (max(vals) if vals else None),
+        },
+        "correlations": corr_rows,
+        "available": bool(series) and (quote.get("last_price") is not None),
+        "note": "BTC data is best-effort via Yahoo Finance. Educational only.",
+    }
+    _set_cached(key, payload, ttl_seconds=60)
+    return payload
+
+
+def btc_predictions(horizon: str = "1m") -> dict:
+    h = (horizon or "1m").strip().lower()
+    if h not in ("1w", "1m", "3m"):
+        h = "1m"
+
+    ttl = {"1w": 120, "1m": 300, "3m": 600}.get(h, 300)
+    key = f"btc:predictions:{h}"
+    cached = _get_cached(key)
+    if cached is not None:
+        return cached
+
+    sym = (os.getenv("BTC_TICKER") or "BTC-USD").strip() or "BTC-USD"
+    hist = _series_close(sym, period="2y", interval="1d")
+    vals = [float(p["close"]) for p in hist if p.get("close") is not None]
+    dates = [str(p["date"])[:10] for p in hist if p.get("close") is not None]
+    if len(vals) < 40:
+        payload = {"ticker": sym, "horizon": h, "algorithms": {}, "correlations": [], "disclaimer": "Not enough BTC history yet."}
+        _set_cached(key, payload, ttl_seconds=ttl)
+        return payload
+
+    if h == "1w":
+        steps = 7
+    elif h == "3m":
+        steps = 90
+    else:
+        steps = 30
+
+    last = vals[-1]
+    recent = vals[-120:]
+    recent_rets = _simple_returns(recent)
+    mu = _mean(recent_rets) or 0.0
+    sigma = _std(recent_rets) or 0.0
+    mean_price = _mean(recent[-30:]) or last
+
+    def _future_points(out_vals: list[float]) -> list[dict]:
+        return [{"t": i, "xLabel": "Now" if i == 0 else ("End" if i == len(out_vals) - 1 else ""), "price": float(v)} for i, v in enumerate(out_vals)]
+
+    # Linear regression on recent prices
+    x = list(range(len(recent)))
+    x_mean = _mean(x) or 0.0
+    y_mean = _mean(recent) or last
+    den = sum((xi - x_mean) ** 2 for xi in x) or 1.0
+    slope = sum((xi - x_mean) * (yi - y_mean) for xi, yi in zip(x, recent)) / den
+    linear_vals = [last] + [max(0.0, last + slope * i) for i in range(1, steps + 1)]
+
+    # Logistic trend classifier -> expected drift from probability of up move
+    ema12 = recent[0]
+    ema26 = recent[0]
+    a12 = 2 / (12 + 1)
+    a26 = 2 / (26 + 1)
+    for p in recent[1:]:
+        ema12 = a12 * p + (1 - a12) * ema12
+        ema26 = a26 * p + (1 - a26) * ema26
+    ret7 = ((recent[-1] - recent[-8]) / recent[-8]) if len(recent) >= 8 and recent[-8] else 0.0
+    score = 10.0 * ret7 + 8.0 * ((ema12 - ema26) / max(last, 1e-9))
+    prob_up = 1.0 / (1.0 + math.exp(-score))
+    logistic_drift = (prob_up - 0.5) * 2.0 * max(sigma, 0.004) * 0.8
+    logistic_vals = [last]
+    lv = last
+    for _ in range(steps):
+        lv = max(0.0, lv * (1.0 + logistic_drift))
+        logistic_vals.append(lv)
+
+    # ARIMA-lite on first differences: ARIMA(1,1,0)-style
+    diffs = [b - a for a, b in zip(recent[:-1], recent[1:])]
+    d_mean = _mean(diffs) or 0.0
+    prev_d = diffs[-1] if diffs else 0.0
+    num = sum((a - d_mean) * (b - d_mean) for a, b in zip(diffs[:-1], diffs[1:])) if len(diffs) > 2 else 0.0
+    den_d = sum((a - d_mean) ** 2 for a in diffs[:-1]) if len(diffs) > 2 else 0.0
+    phi = (num / den_d) if den_d else 0.0
+    phi = max(-0.95, min(0.95, phi))
+    arima_vals = [last]
+    av = last
+    for _ in range(steps):
+        prev_d = d_mean + phi * (prev_d - d_mean)
+        av = max(0.0, av + prev_d)
+        arima_vals.append(av)
+
+    # Momentum drift from log-return mean
+    momentum_vals = [last]
+    mv = last
+    for _ in range(steps):
+        mv = max(0.0, mv * math.exp(mu))
+        momentum_vals.append(mv)
+
+    # Mean reversion to rolling mean
+    k = 0.12
+    mean_rev_vals = [last]
+    rv = last
+    for _ in range(steps):
+        rv = max(0.0, rv + k * (mean_price - rv))
+        mean_rev_vals.append(rv)
+
+    # EMA trend projection
+    ema_gap = (ema12 - ema26) / max(last, 1e-9)
+    ema_drift = ema_gap * 0.9
+    ema_vals = [last]
+    ev = last
+    for _ in range(steps):
+        ev = max(0.0, ev * (1.0 + ema_drift))
+        ema_vals.append(ev)
+
+    correlations = btc_summary(days=30).get("correlations", [])
+    payload = {
+        "ticker": sym,
+        "horizon": h,
+        "algorithms": {
+            "linear": {
+                "label": "Linear Regression",
+                "summary": "Projects the current price trend as a straight line.",
+                "predicted_end": linear_vals[-1],
+                "series": _future_points(linear_vals),
+            },
+            "logistic": {
+                "label": "Logistic Trend",
+                "summary": "Uses momentum and EMA spread to estimate probability of upside continuation.",
+                "probability_up": prob_up,
+                "predicted_end": logistic_vals[-1],
+                "series": _future_points(logistic_vals),
+            },
+            "arima": {
+                "label": "ARIMA-lite (1,1,0)",
+                "summary": "Lightweight autoregressive model on daily price changes.",
+                "predicted_end": arima_vals[-1],
+                "series": _future_points(arima_vals),
+            },
+            "momentum": {
+                "label": "Momentum Drift",
+                "summary": "Extends recent average return as a smooth drift path.",
+                "predicted_end": momentum_vals[-1],
+                "series": _future_points(momentum_vals),
+            },
+            "mean_reversion": {
+                "label": "Mean Reversion",
+                "summary": "Assumes price gradually reverts toward the recent average.",
+                "predicted_end": mean_rev_vals[-1],
+                "series": _future_points(mean_rev_vals),
+            },
+            "ema_trend": {
+                "label": "EMA Trend",
+                "summary": "Uses the gap between short and long EMAs as directional bias.",
+                "predicted_end": ema_vals[-1],
+                "series": _future_points(ema_vals),
+            },
+            "correlation": {
+                "label": "Correlation View",
+                "summary": "Shows how BTC has been moving versus risk and commodity benchmarks.",
+                "predicted_end": None,
+                "series": [],
+                "correlations": correlations,
+            },
+        },
+        "correlations": correlations,
+        "history_points": [{"date": d, "close": v} for d, v in zip(dates[-90:], vals[-90:])],
+        "disclaimer": "Educational only. These are lightweight models, not investment advice.",
+    }
+    _set_cached(key, payload, ttl_seconds=ttl)
+    return payload
