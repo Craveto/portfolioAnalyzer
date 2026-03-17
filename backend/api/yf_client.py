@@ -8,6 +8,9 @@ from pathlib import Path
 
 import yfinance as yf
 import requests
+from django.utils import timezone
+
+from .models import CachedPayload
 
 
 def _configure_yfinance_cache() -> None:
@@ -45,6 +48,37 @@ def _get_cached(key: str):
 
 def _set_cached(key: str, value: object, ttl_seconds: int) -> None:
     _cache[key] = CacheEntry(expires_at=time.time() + ttl_seconds, value=value)
+
+
+def _fundamentals_snapshot_key(ticker: str) -> str:
+    return f"fund_snapshot:{(ticker or '').strip().upper()}"
+
+
+def _load_persistent_fundamentals(ticker: str, max_age_seconds: int | None = None) -> dict | None:
+    try:
+        snap = CachedPayload.objects.filter(key=_fundamentals_snapshot_key(ticker)).first()
+        if not snap:
+            return None
+        if max_age_seconds is not None:
+            age = (timezone.now() - snap.updated_at).total_seconds()
+            if age > max_age_seconds:
+                return None
+        payload = snap.payload or {}
+        return payload if isinstance(payload, dict) else None
+    except Exception:
+        return None
+
+
+def _save_persistent_fundamentals(ticker: str, payload: dict) -> None:
+    if not isinstance(payload, dict):
+        return
+    try:
+        CachedPayload.objects.update_or_create(
+            key=_fundamentals_snapshot_key(ticker),
+            defaults={"payload": payload},
+        )
+    except Exception:
+        pass
 
 def _to_float(v):
     try:
@@ -364,6 +398,8 @@ def get_fundamentals(ticker: str) -> dict:
     if cached is not None:
         return cached
 
+    persistent = _load_persistent_fundamentals(ticker, max_age_seconds=7 * 24 * 3600)
+
     provider = (os.getenv("FUNDAMENTALS_PROVIDER") or "auto").strip().lower()
     prefer_rapid = provider in ("rapidapi", "rapidapi_yahoo", "rapidapi_yahoo_finance") or (provider == "auto" and _has_rapidapi_key())
     prefer_yfinance_only = provider in ("yfinance", "yf")
@@ -466,9 +502,14 @@ def get_fundamentals(ticker: str) -> dict:
         "currency": info.get("currency"),
     }
 
+    if (fundamentals.get("trailingPE") is None and fundamentals.get("forwardPE") is None) and persistent:
+        fundamentals = _merge_fundamentals(persistent, fundamentals)
+
     # Cache shorter when info is missing to avoid "sticky" zeros/nulls during transient Yahoo issues.
     ttl = 300 if (info and (trailing_pe is not None or forward_pe is not None)) else 60
     _set_cached(key, fundamentals, ttl_seconds=ttl)
+    if fundamentals.get("trailingPE") is not None or fundamentals.get("forwardPE") is not None:
+        _save_persistent_fundamentals(ticker, fundamentals)
     return fundamentals
 
 

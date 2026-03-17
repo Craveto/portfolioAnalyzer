@@ -145,6 +145,12 @@ export default function Portfolio() {
       transactions: txs || [],
       holdingMetricsBySymbol: nextMetrics
     });
+
+    if (!force && (data?.meta?.stale || metrics?.meta?.stale)) {
+      window.setTimeout(() => {
+        refresh(true).catch(() => {});
+      }, 0);
+    }
   }
 
   useEffect(() => {

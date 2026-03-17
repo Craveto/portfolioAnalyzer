@@ -405,15 +405,14 @@ def warm_portfolio_snapshot_cache(portfolio: Portfolio, force: bool = False, fre
     snapshot = CachedPayload.objects.filter(key=cache_key).first()
     if snapshot and not force:
         age_seconds = (now - snapshot.updated_at).total_seconds()
-        if age_seconds <= fresh_seconds:
-            payload = dict(snapshot.payload or {})
-            payload["meta"] = {
-                "source": "snapshot",
-                "updated_at": snapshot.updated_at.isoformat(),
-                "stale": False,
-                "age_seconds": round(age_seconds, 1),
-            }
-            return payload
+        payload = dict(snapshot.payload or {})
+        payload["meta"] = {
+            "source": "snapshot",
+            "updated_at": snapshot.updated_at.isoformat(),
+            "stale": age_seconds > fresh_seconds,
+            "age_seconds": round(age_seconds, 1),
+        }
+        return payload
 
     try:
         payload = _compute_portfolio_snapshot(portfolio)
@@ -744,7 +743,7 @@ class PortfoliosRetrieveDestroyView(APIView):
         force = request.query_params.get("force") == "1"
         data = warm_portfolio_snapshot_cache(portfolio=portfolio, force=force, fresh_seconds=45)
         meta = data.get("meta") or {}
-        if meta.get("source") == "snapshot" and meta.get("age_seconds") and meta.get("age_seconds", 0) > 45:
+        if not force and meta.get("source") == "snapshot" and meta.get("stale"):
             _start_portfolio_snapshot_refresh(portfolio.id, request.user.id, fresh_seconds=45)
         return Response(data)
 

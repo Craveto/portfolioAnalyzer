@@ -4,11 +4,29 @@ import { api, clearTokens } from "../api.js";
 import NavBar from "../components/NavBar.jsx";
 import Footer from "../components/Footer.jsx";
 
+const ACCOUNT_CACHE_KEY = "account_page_cache_v1";
+
+function loadAccountCache() {
+  try {
+    const raw = localStorage.getItem(ACCOUNT_CACHE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveAccountCache(data) {
+  try {
+    localStorage.setItem(ACCOUNT_CACHE_KEY, JSON.stringify({ savedAt: Date.now(), data }));
+  } catch {}
+}
+
 export default function Account() {
   const nav = useNavigate();
-  const [me, setMe] = useState(null);
-  const [profile, setProfile] = useState(null);
-  const [portfolios, setPortfolios] = useState([]);
+  const cached = loadAccountCache()?.data || null;
+  const [me, setMe] = useState(cached?.user || null);
+  const [profile, setProfile] = useState(cached?.profile || null);
+  const [portfolios, setPortfolios] = useState(cached?.portfolios || []);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [edit, setEdit] = useState(false);
@@ -40,6 +58,7 @@ export default function Account() {
       .then((d) => {
         setMe(d.user);
         setProfile(d.profile);
+        saveAccountCache({ user: d.user, profile: d.profile, portfolios, watchlist, alerts });
         setForm({
           username: d.user?.username || "",
           email: d.user?.email || "",
@@ -63,6 +82,10 @@ export default function Account() {
     api
       .listPortfolios()
       .then(setPortfolios)
+      .then((list) => {
+        saveAccountCache({ user: me, profile, portfolios: list, watchlist, alerts });
+        return list;
+      })
       .catch((e) => {
         const msg = e?.message || "Failed to load portfolios";
         setError(msg);
@@ -76,11 +99,17 @@ export default function Account() {
   useEffect(() => {
     api
       .listWatchlist()
-      .then(setWatchlist)
+      .then((items) => {
+        setWatchlist(items);
+        saveAccountCache({ user: me, profile, portfolios, watchlist: items, alerts });
+      })
       .catch(() => {});
     api
       .listAlerts()
-      .then(setAlerts)
+      .then((items) => {
+        setAlerts(items);
+        saveAccountCache({ user: me, profile, portfolios, watchlist, alerts: items });
+      })
       .catch(() => {});
   }, []);
 
@@ -119,6 +148,7 @@ export default function Account() {
       const d = await api.updateAccount(patch);
       setMe(d.user);
       setProfile(d.profile);
+      saveAccountCache({ user: d.user, profile: d.profile, portfolios, watchlist, alerts });
       setEdit(false);
       setSuccess("Profile updated.");
     } catch (e) {
@@ -183,7 +213,9 @@ export default function Account() {
     setWatchBusy(true);
     try {
       const item = await api.addWatchlist({ stock_symbol: watchSymbol, stock_name: watchName });
-      setWatchlist((prev) => [item, ...prev.filter((x) => x.id !== item.id)]);
+      const next = [item, ...watchlist.filter((x) => x.id !== item.id)];
+      setWatchlist(next);
+      saveAccountCache({ user: me, profile, portfolios, watchlist: next, alerts });
       setSuccess("Added to watchlist.");
       setWatchQ("");
       setWatchSymbol("");
@@ -200,7 +232,9 @@ export default function Account() {
     setSuccess("");
     try {
       await api.deleteWatchlistItem(id);
-      setWatchlist((prev) => prev.filter((x) => x.id !== id));
+      const next = watchlist.filter((x) => x.id !== id);
+      setWatchlist(next);
+      saveAccountCache({ user: me, profile, portfolios, watchlist: next, alerts });
     } catch (e) {
       setError(e.message || "Failed to remove");
     }
@@ -218,7 +252,9 @@ export default function Account() {
         direction: alertForm.direction,
         target_price: alertForm.target
       });
-      setAlerts((prev) => [a, ...prev]);
+      const next = [a, ...alerts];
+      setAlerts(next);
+      saveAccountCache({ user: me, profile, portfolios, watchlist, alerts: next });
       setSuccess("Alert created.");
       setAlertForm((f) => ({ ...f, target: "" }));
     } catch (e) {
@@ -231,7 +267,9 @@ export default function Account() {
     setSuccess("");
     try {
       await api.deleteAlert(id);
-      setAlerts((prev) => prev.filter((x) => x.id !== id));
+      const next = alerts.filter((x) => x.id !== id);
+      setAlerts(next);
+      saveAccountCache({ user: me, profile, portfolios, watchlist, alerts: next });
     } catch (e) {
       setError(e.message || "Failed to delete alert");
     }

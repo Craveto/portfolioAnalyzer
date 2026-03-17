@@ -12,13 +12,33 @@ function fmt(n) {
   return num.toLocaleString(undefined, { maximumFractionDigits: 2 });
 }
 
+function cacheKey(portfolioId) {
+  return `analysisPage:${portfolioId}`;
+}
+
+function readCache(portfolioId) {
+  try {
+    const raw = localStorage.getItem(cacheKey(portfolioId));
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeCache(portfolioId, payload) {
+  try {
+    localStorage.setItem(cacheKey(portfolioId), JSON.stringify({ savedAt: Date.now(), ...payload }));
+  } catch {}
+}
+
 export default function Analysis() {
   const { id } = useParams();
   const portfolioId = Number(id);
   const nav = useNavigate();
+  const cached = readCache(portfolioId);
 
-  const [data, setData] = useState(null);
-  const [forecast, setForecast] = useState(null);
+  const [data, setData] = useState(cached?.data || null);
+  const [forecast, setForecast] = useState(cached?.forecast || null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [forecastBusy, setForecastBusy] = useState(true);
@@ -32,7 +52,15 @@ export default function Analysis() {
       .then((d) => {
         if (!alive) return;
         setData(d);
+        writeCache(portfolioId, { data: d, forecast });
         setError("");
+        if (d?.meta?.stale) {
+          api.portfolioPE(portfolioId, true).then((fresh) => {
+            if (!alive) return;
+            setData(fresh);
+            writeCache(portfolioId, { data: fresh, forecast });
+          }).catch(() => {});
+        }
       })
       .catch((e) => {
         if (!alive) return;
@@ -52,6 +80,7 @@ export default function Analysis() {
       .then((d) => {
         if (!alive) return;
         setForecast(d);
+        writeCache(portfolioId, { data, forecast: d });
       })
       .catch(() => {})
       .finally(() => {

@@ -11,12 +11,32 @@ function fmt(n) {
   return num.toLocaleString(undefined, { maximumFractionDigits: 2 });
 }
 
+function chartCacheKey(portfolioId) {
+  return `chartPage:${portfolioId}`;
+}
+
+function readChartCache(portfolioId) {
+  try {
+    const raw = localStorage.getItem(chartCacheKey(portfolioId));
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeChartCache(portfolioId, data) {
+  try {
+    localStorage.setItem(chartCacheKey(portfolioId), JSON.stringify({ savedAt: Date.now(), data }));
+  } catch {}
+}
+
 export default function Chart() {
   const { id } = useParams();
   const portfolioId = Number(id);
   const nav = useNavigate();
+  const cached = readChartCache(portfolioId);
 
-  const [data, setData] = useState(null);
+  const [data, setData] = useState(cached?.data || null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
 
@@ -28,7 +48,15 @@ export default function Chart() {
       .then((d) => {
         if (!alive) return;
         setData(d);
+        writeChartCache(portfolioId, d);
         setError("");
+        if (d?.meta?.stale) {
+          api.portfolioPE(portfolioId, true).then((fresh) => {
+            if (!alive) return;
+            setData(fresh);
+            writeChartCache(portfolioId, fresh);
+          }).catch(() => {});
+        }
       })
       .catch((e) => {
         if (!alive) return;
