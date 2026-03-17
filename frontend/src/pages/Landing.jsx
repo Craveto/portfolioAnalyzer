@@ -5,6 +5,7 @@ import LoginModal from "../components/LoginModal.jsx";
 import NavBar from "../components/NavBar.jsx";
 import Footer from "../components/Footer.jsx";
 import MetalsPanel from "../components/MetalsPanel.jsx";
+import BtcPanel from "../components/BtcPanel.jsx";
 
 const MARKET_CACHE_KEY = "landing_market_summary_cache_v1";
 
@@ -38,6 +39,7 @@ export default function Landing() {
   const [loading, setLoading] = useState(() => !loadMarketCache()?.data);
   const [error, setError] = useState("");
   const [loginOpen, setLoginOpen] = useState(false);
+  const [assetTab, setAssetTab] = useState("metals");
 
   const authed = Boolean(getToken());
 
@@ -173,7 +175,18 @@ export default function Landing() {
         </section>
 
         <section className="landingSection">
-          <MetalsPanel />
+          <div className="landingSectionHead">
+            <h2 className="landingH2">Live market modules</h2>
+            <div className="landingAssetTabs">
+              <button className={assetTab === "metals" ? "seg active" : "seg"} type="button" onClick={() => setAssetTab("metals")}>
+                Gold & Silver
+              </button>
+              <button className={assetTab === "btc" ? "seg active" : "seg"} type="button" onClick={() => setAssetTab("btc")}>
+                BTC
+              </button>
+            </div>
+          </div>
+          {assetTab === "metals" ? <MetalsPanel /> : <BtcPanel />}
         </section>
 
         <section className="landingSection">

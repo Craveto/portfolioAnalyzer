@@ -36,7 +36,21 @@ from .serializers import (
     WatchlistAddSerializer,
     WatchlistItemSerializer,
 )
-from .yf_client import download_daily, get_52w_range, get_fast_quote, get_fundamentals, metals_forecast, metals_news, metals_quote_fast, metals_summary, search_indian_equities
+from .yf_client import (
+    btc_news,
+    btc_predictions,
+    btc_quote_fast,
+    btc_summary,
+    download_daily,
+    get_52w_range,
+    get_fast_quote,
+    get_fundamentals,
+    metals_forecast,
+    metals_news,
+    metals_quote_fast,
+    metals_summary,
+    search_indian_equities,
+)
 
 
 _refresh_flags: dict[str, bool] = {}
@@ -1003,3 +1017,35 @@ class MetalsForecastView(APIView):
     def get(self, request):
         horizon = (request.query_params.get("horizon", "1w") or "1w").strip().lower()
         return Response(metals_forecast(horizon=horizon))
+
+
+class BtcSummaryView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        days = int(request.query_params.get("days", "30") or 30)
+        return Response(btc_summary(days=days))
+
+
+class BtcQuoteView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        ttl = int(request.query_params.get("ttl", "20") or 20)
+        return Response(btc_quote_fast(ttl_seconds=ttl))
+
+
+class BtcNewsView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        limit = int(request.query_params.get("limit", "6") or 6)
+        return Response({"items": btc_news(limit=limit)})
+
+
+class BtcPredictionsView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        horizon = (request.query_params.get("horizon", "1m") or "1m").strip().lower()
+        return Response(btc_predictions(horizon=horizon))

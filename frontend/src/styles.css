@@ -724,6 +724,12 @@ a {
   padding: 0 10px;
 }
 
+.landingAssetTabs {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 .landingH2 {
   margin: 0;
   font-size: 18px;
@@ -2104,6 +2110,10 @@ a {
   padding: 18px;
 }
 
+.btcCard {
+  padding: 18px;
+}
+
 .metalsHead {
   display: flex;
   justify-content: space-between;
@@ -2141,6 +2151,72 @@ a {
   grid-template-columns: 1.05fr 1fr;
   gap: 16px;
   align-items: start;
+}
+
+.btcGrid {
+  display: grid;
+  grid-template-columns: 1.08fr 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+.btcKpis {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+.btcPredictHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.btcAlgoTabs {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.btcAlgoSummary {
+  margin-bottom: 12px;
+}
+
+.btcCorrelationGrid {
+  display: grid;
+  gap: 12px;
+}
+
+.btcCorrelationRow {
+  display: grid;
+  grid-template-columns: 120px 1fr 56px;
+  gap: 12px;
+  align-items: center;
+}
+
+.btcCorrelationBar {
+  height: 10px;
+  border-radius: 999px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.btcCorrelationFill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(124, 92, 255, 0.85), rgba(110, 232, 183, 0.7));
+}
+
+.btcCorrelationFill.pos {
+  background: linear-gradient(90deg, rgba(80, 180, 255, 0.75), rgba(48, 209, 88, 0.9));
+}
+
+.btcCorrelationFill.neg {
+  background: linear-gradient(90deg, rgba(255, 159, 64, 0.75), rgba(255, 69, 58, 0.9));
 }
 
 .metalsPrices {
@@ -2337,14 +2413,28 @@ a {
   .metalsGrid {
     grid-template-columns: 1fr;
   }
+  .btcGrid {
+    grid-template-columns: 1fr;
+  }
   .metalsPrices {
     grid-template-columns: 1fr;
   }
+  .btcKpis,
   .metalsForecastKpis,
   .metalsForecastCharts {
     grid-template-columns: 1fr;
   }
   .metalsSelect {
     min-width: 100%;
+  }
+  .btcPredictHead {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .btcAlgoTabs {
+    grid-template-columns: 1fr;
+  }
+  .btcCorrelationRow {
+    grid-template-columns: 1fr;
   }
 }
