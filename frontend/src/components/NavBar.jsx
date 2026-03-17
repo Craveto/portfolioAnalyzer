@@ -289,8 +289,16 @@ export default function NavBar({
               </div>
               {actions || showThemeToggle ? (
                 <div className="navMobileActions">
-                  {renderThemeBtn()}
-                  {actions}
+                  <div className="navMobileUtilityRow">
+                    {renderThemeBtn()}
+                    <button className="navMobileCloseWide" type="button" onClick={() => setOpen(false)} aria-label="Close menu">
+                      <span className="navMobileCloseWideIcon" aria-hidden="true">
+                        ×
+                      </span>
+                      <span>Close</span>
+                    </button>
+                  </div>
+                  {actions ? <div className="navMobileActionButtons">{actions}</div> : null}
                 </div>
               ) : null}
             </div>
