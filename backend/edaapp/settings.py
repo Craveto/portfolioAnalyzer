@@ -87,14 +87,20 @@ TEMPLATES = [
 WSGI_APPLICATION = "edaapp.wsgi.application"
 
 
-DATABASE_URL = (os.getenv("DATABASE_URL") or "").strip()
+DATABASE_URL = (os.getenv("DATABASE_POOL_URL") or os.getenv("DATABASE_URL") or "").strip()
 DB_ENGINE = os.getenv("DB_ENGINE", "sqlite").lower()
+DB_CONN_MAX_AGE_RAW = (os.getenv("DB_CONN_MAX_AGE") or "0").strip()
+try:
+    DB_CONN_MAX_AGE = max(0, int(DB_CONN_MAX_AGE_RAW))
+except ValueError:
+    DB_CONN_MAX_AGE = 0
 
 if DATABASE_URL:
     try:
         import dj_database_url  # type: ignore
 
-        DATABASES = {"default": dj_database_url.parse(DATABASE_URL, conn_max_age=60, ssl_require=True)}
+        DATABASES = {"default": dj_database_url.parse(DATABASE_URL, conn_max_age=DB_CONN_MAX_AGE, ssl_require=True)}
+        DATABASES["default"]["DISABLE_SERVER_SIDE_CURSORS"] = True
     except Exception as e:
         raise RuntimeError("DATABASE_URL is set but 'dj-database-url' is not installed.") from e
 elif DB_ENGINE == "mssql":

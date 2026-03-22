@@ -211,6 +211,33 @@ export const api = {
   portfolioForecast(portfolioId, days = 90) {
     return apiFetch(`/api/analysis/portfolio/${portfolioId}/forecast/?days=${encodeURIComponent(days)}`, { auth: true });
   },
+  portfolioSentiment(portfolioId) {
+    return apiFetch(`/api/analysis/portfolio/${portfolioId}/sentiment/`, { auth: true });
+  },
+  stockInsight(portfolioId, symbol, force = false) {
+    const qs = force ? "?force=1" : "";
+    return apiFetch(`/api/analysis/portfolio/${portfolioId}/stocks/${encodeURIComponent(symbol)}/insight/${qs}`, { auth: true });
+  },
+  quickStockSentiment(symbol, name = "") {
+    const qs = `?symbol=${encodeURIComponent(symbol || "")}${name ? `&name=${encodeURIComponent(name)}` : ""}`;
+    return apiFetch(`/api/analysis/stock/quick-sentiment/${qs}`, { auth: true });
+  },
+  async stockReport(portfolioId, symbol, format = "md") {
+    const token = getToken();
+    const res = await fetch(
+      `${API_BASE}/api/analysis/portfolio/${portfolioId}/stocks/${encodeURIComponent(symbol)}/report/?format=${encodeURIComponent(format)}`,
+      {
+        method: "GET",
+        headers: token ? { Authorization: `Token ${token}` } : {}
+      }
+    );
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(text || `HTTP ${res.status}`);
+    }
+    const blob = await res.blob();
+    return blob;
+  },
   cluster({ portfolioIds = [], k = 3 } = {}) {
     const ids = Array.isArray(portfolioIds) ? portfolioIds.filter(Boolean) : [];
     const qs = `?portfolio_ids=${encodeURIComponent(ids.join(","))}&k=${encodeURIComponent(String(k))}`;

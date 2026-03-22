@@ -354,12 +354,24 @@ def get_fast_quote(ticker: str) -> dict:
         return cached
     t = yf.Ticker(ticker)
     info = getattr(t, "fast_info", None) or {}
+
+    def _safe_info_get(key: str):
+        try:
+            if isinstance(info, dict):
+                return info.get(key)
+            getter = getattr(info, "get", None)
+            if callable(getter):
+                return getter(key)
+            return None
+        except Exception:
+            return None
+
     quote = {
         "ticker": ticker,
-        "last_price": info.get("last_price"),
-        "previous_close": info.get("previous_close"),
-        "currency": info.get("currency"),
-        "time_zone": info.get("time_zone"),
+        "last_price": _safe_info_get("last_price"),
+        "previous_close": _safe_info_get("previous_close"),
+        "currency": _safe_info_get("currency"),
+        "time_zone": _safe_info_get("time_zone"),
     }
 
     if quote["last_price"] is None:

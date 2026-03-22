@@ -26,6 +26,13 @@ function round2(n) {
   return Math.round(num * 100) / 100;
 }
 
+function toneClass(label) {
+  const v = String(label || "").toLowerCase();
+  if (v.includes("bull") || v.includes("positive")) return "pos";
+  if (v.includes("bear") || v.includes("negative")) return "neg";
+  return "neutral";
+}
+
 function loadRecent() {
   try {
     const raw = localStorage.getItem("recentSymbols");
@@ -94,6 +101,9 @@ export default function Portfolio() {
   const [searchPreviewBySymbol, setSearchPreviewBySymbol] = useState({});
   const [searchPreviewBusy, setSearchPreviewBusy] = useState(false);
   const [activeSearchIdx, setActiveSearchIdx] = useState(0);
+  const [tradeSentimentBySymbol, setTradeSentimentBySymbol] = useState({});
+  const [tradeSentimentBusySymbol, setTradeSentimentBusySymbol] = useState("");
+  const [tradeSentimentError, setTradeSentimentError] = useState("");
 
   const [clusterOpen, setClusterOpen] = useState(false);
   const clusterAnchorRef = useRef(null);
@@ -220,6 +230,22 @@ export default function Portfolio() {
 
   const selected = useMemo(() => stockResults.find((s) => String(s.symbol) === String(selectedSymbol)), [stockResults, selectedSymbol]);
   const selectedPreview = useMemo(() => searchPreviewBySymbol[String(selectedSymbol || "")] || null, [searchPreviewBySymbol, selectedSymbol]);
+  const selectedQuickSentiment = useMemo(() => tradeSentimentBySymbol[String(selectedSymbol || "")] || null, [tradeSentimentBySymbol, selectedSymbol]);
+
+  async function fetchQuickSentiment(symbol, name = "") {
+    const sym = String(symbol || "").trim().toUpperCase();
+    if (!sym) return;
+    setTradeSentimentError("");
+    setTradeSentimentBusySymbol(sym);
+    try {
+      const data = await api.quickStockSentiment(sym, name || "");
+      setTradeSentimentBySymbol((prev) => ({ ...prev, [sym]: data }));
+    } catch (e) {
+      setTradeSentimentError(e.message || "Quick sentiment is unavailable right now.");
+    } finally {
+      setTradeSentimentBusySymbol("");
+    }
+  }
 
   useEffect(() => {
     if (!selectedSymbol) return;
@@ -242,6 +268,13 @@ export default function Portfolio() {
       alive = false;
     };
   }, [selectedSymbol]);
+
+  useEffect(() => {
+    if (!selectedSymbol) return;
+    const key = String(selectedSymbol);
+    if (tradeSentimentBySymbol[key]) return;
+    fetchQuickSentiment(selectedSymbol, selectedName || selected?.name || "");
+  }, [selectedSymbol, selectedName, selected, tradeSentimentBySymbol]);
 
   useEffect(() => {
     if (!tradeOpen) return;
@@ -928,6 +961,20 @@ export default function Portfolio() {
                               {showLoading ? <span className="statSkeleton" /> : discLabel}
                             </div>
                           </div>
+                          <button
+                            type="button"
+                            className={`miniSentBtn ${tradeSentimentBusySymbol === sym ? "busy" : ""}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedSymbol(s.symbol);
+                              setSelectedName(s.name || "");
+                              setQ(`${s.symbol}`);
+                              fetchQuickSentiment(s.symbol, s.name || "");
+                            }}
+                            title="Quick sentiment summary"
+                          >
+                            {tradeSentimentBusySymbol === sym ? "..." : "Sentiment"}
+                          </button>
                         </div>
                       </div>
                     </button>
@@ -969,6 +1016,52 @@ export default function Portfolio() {
                       : `${fmt(selectedPreview.discount_from_52w_high_pct)}%`}
                   </div>
                 </div>
+              </div>
+            ) : null}
+
+            {selectedSymbol ? (
+              <div className="quickSentimentPanel">
+                <div className="quickSentimentHead">
+                  <div className="strong">Quick sentiment</div>
+                  <button
+                    type="button"
+                    className={`btn ghost sm ${tradeSentimentBusySymbol === selectedSymbol ? "btnBusy" : ""}`}
+                    onClick={() => fetchQuickSentiment(selectedSymbol, selectedName || selected?.name || "")}
+                    disabled={tradeSentimentBusySymbol === selectedSymbol}
+                  >
+                    {tradeSentimentBusySymbol === selectedSymbol ? "Refreshing..." : "Refresh"}
+                  </button>
+                </div>
+                {tradeSentimentError ? <div className="muted small">{tradeSentimentError}</div> : null}
+                {selectedQuickSentiment ? (
+                  <>
+                    <div className="quickSentimentGrid">
+                      <div className="quickSentimentMetric">
+                        <span>Signal</span>
+                        <strong className={toneClass(selectedQuickSentiment.overall_signal?.label)}>
+                          {selectedQuickSentiment.overall_signal?.label || "Neutral"}
+                        </strong>
+                      </div>
+                      <div className="quickSentimentMetric">
+                        <span>Score</span>
+                        <strong>{fmt(selectedQuickSentiment.overall_signal?.sentiment_score)}</strong>
+                      </div>
+                      <div className="quickSentimentMetric">
+                        <span>Confidence</span>
+                        <strong>{fmt(Number(selectedQuickSentiment.overall_signal?.confidence || 0) * 100)}%</strong>
+                      </div>
+                      <div className="quickSentimentMetric">
+                        <span>Risk flags</span>
+                        <strong>{(selectedQuickSentiment.risk_flags || []).length}</strong>
+                      </div>
+                    </div>
+                    <div className="quickSentimentVerdict">
+                      {(selectedQuickSentiment.verdict || {}).reason || "Based on latest news flow and market context."}
+                    </div>
+                  </>
+                ) : (
+                  <div className="muted small">Tap Sentiment to load a concise stock view.</div>
+                )}
               </div>
             ) : null}
 
