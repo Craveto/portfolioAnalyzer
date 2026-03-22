@@ -98,12 +98,20 @@ except ValueError:
 
 
 def _fallback_parse_database_url(url: str) -> dict:
-    parsed = urlparse(url)
+    raw = (url or "").strip().strip("'").strip('"')
+    # Tolerate scheme-less env values like:
+    # user:pass@host:5432/dbname  OR  //user:pass@host:5432/dbname
+    if raw and "://" not in raw:
+        raw = f"postgresql://{raw.lstrip('/')}"
+    parsed = urlparse(raw)
     scheme = (parsed.scheme or "").lower()
     if "+" in scheme:
         scheme = scheme.split("+", 1)[0]
     if scheme not in {"postgres", "postgresql"}:
-        raise RuntimeError(f"Unsupported DATABASE_URL scheme without dj-database-url: {parsed.scheme}")
+        raise RuntimeError(
+            f"Unsupported DATABASE_URL scheme without dj-database-url: {parsed.scheme}. "
+            "Use a full URL like postgresql://user:pass@host:5432/dbname"
+        )
     query = parse_qs(parsed.query or "")
     sslmode = (query.get("sslmode", ["require"])[0] or "require").strip()
     return {
