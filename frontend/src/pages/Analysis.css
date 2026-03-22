@@ -41,3 +41,148 @@
   justify-self: end;
 }
 
+.verdictCard {
+  border-width: 1px;
+  border-style: solid;
+}
+
+.verdictCard.pos {
+  border-color: rgba(45, 212, 191, 0.45);
+  background: rgba(45, 212, 191, 0.08);
+}
+
+.verdictCard.neg {
+  border-color: rgba(244, 63, 94, 0.45);
+  background: rgba(244, 63, 94, 0.08);
+}
+
+.verdictCard.neutral {
+  border-color: rgba(96, 165, 250, 0.45);
+  background: rgba(96, 165, 250, 0.08);
+}
+
+.verdictBtn {
+  margin-top: 10px;
+}
+
+.verdictReason {
+  margin-top: 10px;
+  line-height: 1.45;
+}
+
+.verdictCard {
+  position: relative;
+  overflow: hidden;
+}
+
+.verdictCard::after {
+  content: "";
+  position: absolute;
+  inset: -30% auto auto -20%;
+  width: 180px;
+  height: 180px;
+  border-radius: 50%;
+  pointer-events: none;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.16), transparent 70%);
+  opacity: 0.45;
+}
+
+.btnBusy {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.btnBusy::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(110deg, transparent 0%, rgba(255, 255, 255, 0.22) 50%, transparent 100%);
+  transform: translateX(-120%);
+  animation: btnShimmer 1.2s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.btnLoader {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: rgba(255, 255, 255, 1);
+  animation: btnSpin 0.8s linear infinite;
+  flex: 0 0 auto;
+}
+
+.reportActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.reportActions .btn {
+  min-width: 164px;
+  justify-content: center;
+}
+
+.reportPrintBtn {
+  border-color: rgba(140, 225, 255, 0.34);
+  background: linear-gradient(180deg, rgba(77, 162, 255, 0.12), rgba(77, 162, 255, 0.04));
+}
+
+.reportStatus {
+  margin-top: 10px;
+  border-radius: 12px;
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  font-weight: 600;
+  letter-spacing: 0.1px;
+}
+
+.reportStatus.info {
+  border-color: rgba(77, 162, 255, 0.35);
+  background: linear-gradient(180deg, rgba(77, 162, 255, 0.16), rgba(77, 162, 255, 0.07));
+  color: #d9ecff;
+}
+
+.reportStatus.warn {
+  border-color: rgba(255, 180, 84, 0.4);
+  background: linear-gradient(180deg, rgba(255, 180, 84, 0.2), rgba(255, 180, 84, 0.08));
+  color: #ffe8c7;
+}
+
+@keyframes btnSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes btnShimmer {
+  to {
+    transform: translateX(120%);
+  }
+}
+
+@media (max-width: 900px) {
+  .insightActions .btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .reportActions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 560px) {
+  .insightMetricValue {
+    font-size: 22px;
+  }
+
+  .verdictBtn {
+    width: 100%;
+  }
+}

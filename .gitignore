@@ -30,7 +30,11 @@ Thumbs.db
 
 # others files to ignore 
 development.txt 
-
+.log 
 
 frontend/run_btc_frontend.err.log
 frontend/run_btc_frontend.log 
+
+# Local runtime caches (do not commit)
+backend/.cache/
+backend/.cache/**/*

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from urllib.parse import parse_qs, unquote, urlparse
 from typing import Final
 
 try:
@@ -87,16 +88,53 @@ TEMPLATES = [
 WSGI_APPLICATION = "edaapp.wsgi.application"
 
 
-DATABASE_URL = (os.getenv("DATABASE_URL") or "").strip()
+DATABASE_URL = (os.getenv("DATABASE_POOL_URL") or os.getenv("DATABASE_URL") or "").strip()
 DB_ENGINE = os.getenv("DB_ENGINE", "sqlite").lower()
+DB_CONN_MAX_AGE_RAW = (os.getenv("DB_CONN_MAX_AGE") or "0").strip()
+try:
+    DB_CONN_MAX_AGE = max(0, int(DB_CONN_MAX_AGE_RAW))
+except ValueError:
+    DB_CONN_MAX_AGE = 0
+
+
+def _fallback_parse_database_url(url: str) -> dict:
+    raw = (url or "").strip().strip("'").strip('"')
+    # Tolerate scheme-less env values like:
+    # user:pass@host:5432/dbname  OR  //user:pass@host:5432/dbname
+    if raw and "://" not in raw:
+        raw = f"postgresql://{raw.lstrip('/')}"
+    parsed = urlparse(raw)
+    scheme = (parsed.scheme or "").lower()
+    if "+" in scheme:
+        scheme = scheme.split("+", 1)[0]
+    if scheme not in {"postgres", "postgresql"}:
+        raise RuntimeError(
+            f"Unsupported DATABASE_URL scheme without dj-database-url: {parsed.scheme}. "
+            "Use a full URL like postgresql://user:pass@host:5432/dbname"
+        )
+    query = parse_qs(parsed.query or "")
+    sslmode = (query.get("sslmode", ["require"])[0] or "require").strip()
+    return {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": unquote((parsed.path or "/postgres").lstrip("/") or "postgres"),
+        "USER": unquote(parsed.username or ""),
+        "PASSWORD": unquote(parsed.password or ""),
+        "HOST": parsed.hostname or "",
+        "PORT": parsed.port or 5432,
+        "CONN_MAX_AGE": DB_CONN_MAX_AGE,
+        "OPTIONS": {"sslmode": sslmode},
+        "DISABLE_SERVER_SIDE_CURSORS": True,
+    }
+
 
 if DATABASE_URL:
     try:
         import dj_database_url  # type: ignore
 
-        DATABASES = {"default": dj_database_url.parse(DATABASE_URL, conn_max_age=60, ssl_require=True)}
+        DATABASES = {"default": dj_database_url.parse(DATABASE_URL, conn_max_age=DB_CONN_MAX_AGE, ssl_require=True)}
+        DATABASES["default"]["DISABLE_SERVER_SIDE_CURSORS"] = True
     except Exception as e:
-        raise RuntimeError("DATABASE_URL is set but 'dj-database-url' is not installed.") from e
+        DATABASES = {"default": _fallback_parse_database_url(DATABASE_URL)}
 elif DB_ENGINE == "mssql":
     DATABASES = {
         "default": {

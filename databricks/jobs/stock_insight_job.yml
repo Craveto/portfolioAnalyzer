@@ -1,0 +1,72 @@
+resources:
+  jobs:
+    stock_insight_pipeline:
+      name: stock_insight_pipeline
+      tasks:
+        - task_key: ingest_supabase_portfolio
+          notebook_task:
+            notebook_path: ../notebooks/01_ingest_supabase_portfolio
+
+        - task_key: build_active_ticker_list
+          depends_on:
+            - task_key: ingest_supabase_portfolio
+          notebook_task:
+            notebook_path: ../notebooks/03_build_active_ticker_list
+
+        - task_key: validate_bronze_portfolio_snapshot
+          depends_on:
+            - task_key: ingest_supabase_portfolio
+          notebook_task:
+            notebook_path: ../notebooks/02_validate_bronze_portfolio_snapshot
+
+        - task_key: fetch_news_for_tickers
+          depends_on:
+            - task_key: build_active_ticker_list
+            - task_key: validate_bronze_portfolio_snapshot
+          notebook_task:
+            notebook_path: ../notebooks/03_fetch_news_for_tickers
+
+        - task_key: fetch_market_context
+          depends_on:
+            - task_key: build_active_ticker_list
+          notebook_task:
+            notebook_path: ../notebooks/04_fetch_market_context
+
+        - task_key: clean_portfolio_data
+          depends_on:
+            - task_key: ingest_supabase_portfolio
+          notebook_task:
+            notebook_path: ../notebooks/05_clean_portfolio_data
+
+        - task_key: clean_news_data
+          depends_on:
+            - task_key: fetch_news_for_tickers
+          notebook_task:
+            notebook_path: ../notebooks/06_clean_news_data
+
+        - task_key: score_news_with_finbert
+          depends_on:
+            - task_key: clean_news_data
+          notebook_task:
+            notebook_path: ../notebooks/07_score_news_with_finbert
+
+        - task_key: aggregate_stock_gold_tables
+          depends_on:
+            - task_key: score_news_with_finbert
+            - task_key: fetch_market_context
+            - task_key: clean_portfolio_data
+          notebook_task:
+            notebook_path: ../notebooks/08_aggregate_stock_gold_tables
+
+        - task_key: aggregate_portfolio_gold_tables
+          depends_on:
+            - task_key: aggregate_stock_gold_tables
+          notebook_task:
+            notebook_path: ../notebooks/09_aggregate_portfolio_gold_tables
+
+        - task_key: build_report_dataset
+          depends_on:
+            - task_key: aggregate_stock_gold_tables
+            - task_key: aggregate_portfolio_gold_tables
+          notebook_task:
+            notebook_path: ../notebooks/10_build_report_dataset
