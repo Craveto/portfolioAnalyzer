@@ -51,8 +51,24 @@ def _market_context_complete(payload: dict) -> bool:
     )
 
 
-def _cache_key(kind: str, portfolio: Portfolio, symbol: str | None = None) -> str:
-    parts = ["analysis", kind, str(portfolio.id)]
+def _cache_matches_provider(payload: dict, provider: str) -> bool:
+    meta = dict((payload or {}).get("meta") or {})
+    meta_provider = str(meta.get("provider") or "").strip().lower()
+    meta_source = str(meta.get("source") or "").strip().lower()
+    looks_databricks = (meta_provider == "databricks") or ("databricks" in meta_source)
+
+    if provider == "databricks":
+        return looks_databricks
+    if provider == "demo":
+        return not looks_databricks
+    return True
+
+
+def _cache_key(kind: str, portfolio: Portfolio, symbol: str | None = None, provider: str | None = None) -> str:
+    parts = ["analysis", kind]
+    if provider:
+        parts.append(provider)
+    parts.append(str(portfolio.id))
     if symbol:
         parts.append(symbol.upper())
     return ":".join(parts)
@@ -113,7 +129,17 @@ def _write_cached_payload(cache_key: str, payload: dict) -> dict:
 
 
 def get_stock_insight_provider() -> str:
-    return (os.getenv("STOCK_INSIGHT_PROVIDER") or "demo").strip().lower()
+    configured = (os.getenv("STOCK_INSIGHT_PROVIDER") or "").strip().lower()
+    if configured in {"databricks", "demo"}:
+        return configured
+    has_databricks_env = all(
+        [
+            (os.getenv("DBX_HOST") or "").strip(),
+            (os.getenv("DBX_HTTP_PATH") or "").strip(),
+            (os.getenv("DBX_TOKEN") or "").strip(),
+        ]
+    )
+    return "databricks" if has_databricks_env else "demo"
 
 
 def _portfolio_cache_ttl_seconds(default_seconds: int = 300) -> int:
@@ -136,11 +162,12 @@ def get_portfolio_sentiment(portfolio: Portfolio, force_refresh: bool = False, f
     fresh_seconds = _portfolio_cache_ttl_seconds(fresh_seconds)
     provider = get_stock_insight_provider()
     if provider == "databricks":
-        cache_key = _cache_key("portfolio_sentiment", portfolio)
+        cache_key = _cache_key("portfolio_sentiment", portfolio, provider=provider)
         if not force_refresh:
             cached = _read_cached_payload(cache_key, fresh_seconds=fresh_seconds, allow_stale=True)
             if cached:
-                return cached
+                if _cache_matches_provider(cached, provider):
+                    return cached
         try:
             payload = get_portfolio_sentiment_from_databricks(portfolio)
         except (DatabricksConfigError, DatabricksQueryError) as exc:
@@ -149,7 +176,8 @@ def get_portfolio_sentiment(portfolio: Portfolio, force_refresh: bool = False, f
                 meta = dict(cached.get("meta") or {})
                 meta["fallback_reason"] = str(exc)
                 cached["meta"] = meta
-                return cached
+                if _cache_matches_provider(cached, provider):
+                    return cached
             raise DatabricksProviderRuntimeError(str(exc)) from exc
         return _write_cached_payload(cache_key, payload)
     return build_portfolio_sentiment_summary(portfolio)
@@ -159,11 +187,11 @@ def get_stock_insight(portfolio: Portfolio, symbol: str, force_refresh: bool = F
     fresh_seconds = _stock_cache_ttl_seconds(fresh_seconds)
     provider = get_stock_insight_provider()
     if provider == "databricks":
-        cache_key = _cache_key("stock_insight", portfolio, symbol)
+        cache_key = _cache_key("stock_insight", portfolio, symbol, provider=provider)
         if not force_refresh:
             cached = _read_cached_payload(cache_key, fresh_seconds=fresh_seconds, allow_stale=True)
             if cached:
-                if _market_context_complete(cached):
+                if _cache_matches_provider(cached, provider) and _market_context_complete(cached):
                     return cached
         try:
             payload = get_stock_insight_from_databricks(portfolio, symbol)
@@ -175,7 +203,8 @@ def get_stock_insight(portfolio: Portfolio, symbol: str, force_refresh: bool = F
                 if not _market_context_complete(cached):
                     meta["market_context_note"] = "Some market fields are temporarily unavailable from both Databricks and fallback providers."
                 cached["meta"] = meta
-                return cached
+                if _cache_matches_provider(cached, provider):
+                    return cached
             raise DatabricksProviderRuntimeError(str(exc)) from exc
         return _write_cached_payload(cache_key, payload)
     return build_stock_sentiment_insight(portfolio, symbol)
