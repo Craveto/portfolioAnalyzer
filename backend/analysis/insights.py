@@ -211,6 +211,53 @@ def _fallback_news(symbol: str, company_name: str, market_context: dict) -> list
     ]
 
 
+def _normalize_news_item(item: dict) -> dict | None:
+    if not isinstance(item, dict):
+        return None
+    content = item.get("content") or {}
+    canonical_url = content.get("canonicalUrl") or {}
+
+    headline = _clean_text(item.get("title") or item.get("headline") or content.get("title"))
+    summary = _clean_text(item.get("summary") or item.get("description") or content.get("summary") or content.get("description"))
+    link = item.get("link") or item.get("url") or canonical_url.get("url") or ""
+    publisher = item.get("publisher") or item.get("provider") or content.get("provider") or "Yahoo Finance"
+    published = item.get("providerPublishTime") or item.get("published_at") or item.get("pubDate") or content.get("pubDate")
+
+    if not headline and not summary:
+        return None
+
+    out = {
+        "headline": headline,
+        "summary": summary,
+        "publisher": publisher,
+        "link": link,
+        "providerPublishTime": published,
+    }
+    if "_fallback_score" in item:
+        out["_fallback_score"] = item.get("_fallback_score")
+    return out
+
+
+def _extract_news_items(symbol: str, company_name: str, market_context: dict, limit: int = 15) -> list[dict]:
+    try:
+        raw_news = list(getattr(yf.Ticker(symbol), "news", None) or [])
+    except Exception:
+        raw_news = []
+
+    normalized: list[dict] = []
+    for item in raw_news:
+        n_item = _normalize_news_item(item)
+        if n_item:
+            normalized.append(n_item)
+        if len(normalized) >= limit:
+            break
+
+    if not normalized:
+        normalized = _fallback_news(symbol, company_name, market_context)
+
+    return normalized
+
+
 def _stock_market_context(symbol: str) -> dict:
     quote = get_fast_quote(symbol)
     fundamentals = get_fundamentals(symbol)
@@ -254,12 +301,7 @@ def build_stock_sentiment_insight(portfolio: Portfolio, symbol: str) -> dict:
     company_name = holding.stock.name or symbol
     market_context = _stock_market_context(symbol)
 
-    try:
-        raw_news = list(getattr(yf.Ticker(symbol), "news", None) or [])
-    except Exception:
-        raw_news = []
-    if not raw_news:
-        raw_news = _fallback_news(symbol, company_name, market_context)
+    raw_news = _extract_news_items(symbol, company_name, market_context, limit=15)
 
     now = timezone.now().astimezone(dt_timezone.utc)
     scored_news = []
@@ -422,12 +464,7 @@ def build_stock_sentiment_quick(symbol: str, company_name: str | None = None) ->
     company_name = (company_name or symbol).strip()
     market_context = _stock_market_context(symbol)
 
-    try:
-        raw_news = list(getattr(yf.Ticker(symbol), "news", None) or [])
-    except Exception:
-        raw_news = []
-    if not raw_news:
-        raw_news = _fallback_news(symbol, company_name, market_context)
+    raw_news = _extract_news_items(symbol, company_name, market_context, limit=15)
 
     now = timezone.now().astimezone(dt_timezone.utc)
     scored_news = []

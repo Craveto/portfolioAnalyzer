@@ -218,8 +218,8 @@ export const api = {
     const qs = force ? "?force=1" : "";
     return apiFetch(`/api/analysis/portfolio/${portfolioId}/stocks/${encodeURIComponent(symbol)}/insight/${qs}`, { auth: true });
   },
-  quickStockSentiment(symbol, name = "") {
-    const qs = `?symbol=${encodeURIComponent(symbol || "")}${name ? `&name=${encodeURIComponent(name)}` : ""}`;
+  quickStockSentiment(symbol, name = "", force = false) {
+    const qs = `?symbol=${encodeURIComponent(symbol || "")}${name ? `&name=${encodeURIComponent(name)}` : ""}${force ? "&force=1" : ""}`;
     return apiFetch(`/api/analysis/stock/quick-sentiment/${qs}`, { auth: true });
   },
   async stockReport(portfolioId, symbol, format = "md") {
