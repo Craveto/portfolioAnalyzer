@@ -12,9 +12,11 @@ from portfolio.models import Portfolio
 from .databricks_client import DatabricksConfigError, DatabricksQueryError
 from .databricks_provider import (
     get_portfolio_sentiment_from_databricks,
+    get_stock_quick_sentiment_from_databricks,
     get_stock_insight_from_databricks,
 )
 from .insights import (
+    build_stock_sentiment_quick,
     build_portfolio_sentiment_summary,
     build_stock_report_csv_rows,
     build_stock_report_markdown,
@@ -218,3 +220,30 @@ def get_stock_report_markdown(portfolio: Portfolio, symbol: str) -> str:
 def get_stock_report_csv_rows(portfolio: Portfolio, symbol: str) -> list[dict]:
     insight = get_stock_insight(portfolio, symbol)
     return build_stock_report_csv_rows(insight)
+
+
+def get_quick_stock_sentiment(symbol: str, company_name: str | None = None, force_refresh: bool = False, fresh_seconds: int = 120) -> dict:
+    symbol = (symbol or "").strip().upper()
+    if not symbol:
+        raise ValueError("symbol is required")
+
+    provider = get_stock_insight_provider()
+    if provider == "databricks":
+        cache_key = f"analysis:quick_stock_sentiment:{symbol}"
+        if not force_refresh:
+            cached = _read_cached_payload(cache_key, fresh_seconds=fresh_seconds, allow_stale=True)
+            if cached:
+                return cached
+        try:
+            payload = get_stock_quick_sentiment_from_databricks(symbol=symbol, company_name=company_name)
+        except (DatabricksConfigError, DatabricksQueryError) as exc:
+            cached = _read_cached_payload(cache_key, fresh_seconds=fresh_seconds, allow_stale=True)
+            if cached:
+                meta = dict(cached.get("meta") or {})
+                meta["fallback_reason"] = str(exc)
+                cached["meta"] = meta
+                return cached
+            raise DatabricksProviderRuntimeError(str(exc)) from exc
+        return _write_cached_payload(cache_key, payload)
+
+    return build_stock_sentiment_quick(symbol=symbol, company_name=company_name)

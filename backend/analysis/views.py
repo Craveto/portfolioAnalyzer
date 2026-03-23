@@ -24,12 +24,12 @@ from .cluster import build_cluster_items, cluster_items
 from .provider import (
     DatabricksProviderNotReadyError,
     DatabricksProviderRuntimeError,
+    get_quick_stock_sentiment,
     get_portfolio_sentiment,
     get_stock_insight,
     get_stock_report_csv_rows,
     get_stock_report_markdown,
 )
-from .insights import build_stock_sentiment_quick
 
 
 _refresh_flags: dict[str, bool] = {}
@@ -689,16 +689,18 @@ class QuickStockSentimentView(APIView):
     def get(self, request):
         symbol = (request.query_params.get("symbol") or "").strip().upper()
         name = (request.query_params.get("name") or "").strip() or None
+        force_refresh = request.query_params.get("force") == "1"
         if not symbol:
             return Response({"detail": "symbol is required"}, status=status.HTTP_400_BAD_REQUEST)
         cache_key = f"{symbol}|{(name or '').strip().lower()}"
         now_ts = time.time()
-        with _quick_sentiment_lock:
-            entry = _quick_sentiment_cache.get(cache_key)
-            if entry and entry[0] > now_ts:
-                return Response(entry[1], status=status.HTTP_200_OK)
+        if not force_refresh:
+            with _quick_sentiment_lock:
+                entry = _quick_sentiment_cache.get(cache_key)
+                if entry and entry[0] > now_ts:
+                    return Response(entry[1], status=status.HTTP_200_OK)
         try:
-            payload = build_stock_sentiment_quick(symbol=symbol, company_name=name)
+            payload = get_quick_stock_sentiment(symbol=symbol, company_name=name, force_refresh=force_refresh)
             with _quick_sentiment_lock:
                 _quick_sentiment_cache[cache_key] = (now_ts + 120, payload)
                 if len(_quick_sentiment_cache) > 200:

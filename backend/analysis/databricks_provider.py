@@ -395,3 +395,147 @@ def get_stock_insight_from_databricks(portfolio: Portfolio, symbol: str) -> dict
             "news_window": "24h_preferred",
         },
     }
+
+
+def get_stock_quick_sentiment_from_databricks(symbol: str, company_name: str | None = None) -> dict:
+    symbol = (symbol or "").strip().upper()
+    if not symbol:
+        raise ValueError("symbol is required")
+
+    stock_row = fetch_one(
+        """
+        SELECT
+          ticker,
+          sentiment_score_24h,
+          sentiment_score_7d,
+          news_count,
+          high_impact_news_count,
+          dominant_event_type,
+          last_price,
+          daily_change_pct,
+          pe_ratio,
+          market_cap,
+          as_of_ts
+        FROM portfolio_analyzer.gold.gold_stock_insight_current
+        WHERE ticker = ?
+        ORDER BY as_of_ts DESC
+        LIMIT 1
+        """,
+        [symbol],
+    ) or {}
+
+    news_rows = fetch_all(
+        """
+        SELECT
+          ticker,
+          cleaned_headline,
+          source,
+          published_at,
+          sentiment_label,
+          impact_level,
+          short_explanation_tag,
+          url
+        FROM portfolio_analyzer.gold.gold_stock_news_view
+        WHERE ticker = ?
+          AND published_at >= current_timestamp() - INTERVAL 1 DAY
+        ORDER BY published_at DESC
+        LIMIT 3
+        """,
+        [symbol],
+    )
+    if not news_rows:
+        news_rows = fetch_all(
+            """
+            SELECT
+              ticker,
+              cleaned_headline,
+              source,
+              published_at,
+              sentiment_label,
+              impact_level,
+              short_explanation_tag,
+              url
+            FROM portfolio_analyzer.gold.gold_stock_news_view
+            WHERE ticker = ?
+            ORDER BY published_at DESC
+            LIMIT 3
+            """,
+            [symbol],
+        )
+
+    score_7d = _to_float(stock_row.get("sentiment_score_7d")) or 0.0
+    score_24h = _to_float(stock_row.get("sentiment_score_24h")) or 0.0
+    news_count = int(stock_row.get("news_count") or 0)
+    high_impact = int(stock_row.get("high_impact_news_count") or 0)
+    dominant_event = stock_row.get("dominant_event_type") or "other"
+
+    if score_7d >= 1.0:
+        signal = "Bullish"
+    elif score_7d <= -1.0:
+        signal = "Bearish"
+    else:
+        signal = "Neutral"
+
+    confidence = round(min(0.95, 0.45 + min(news_count, 8) * 0.05 + min(abs(score_7d), 1.5) * 0.12), 2)
+    risk_flags = []
+    if high_impact:
+        risk_flags.append(f"{high_impact} high-impact headline{'s' if high_impact != 1 else ''}")
+    if dominant_event in {"legal", "guidance", "management", "analyst_rating", "macro"} and score_7d <= 0:
+        risk_flags.append(f"{str(dominant_event).replace('_', ' ').title()} risk")
+
+    return {
+        "stock": {"symbol": symbol, "name": company_name or symbol},
+        "overall_signal": {
+            "label": signal,
+            "sentiment_score": score_7d,
+            "confidence": confidence,
+            "window": "7d",
+            "based_on": f"{news_count} relevant article{'s' if news_count != 1 else ''}",
+        },
+        "score_breakdown": {
+            "score_24h": score_24h,
+            "score_7d": score_7d,
+            "news_count": news_count,
+            "high_impact_news_count": high_impact,
+            "dominant_event_type": dominant_event,
+        },
+        "risk_flags": risk_flags,
+        "verdict": {
+            "label": signal,
+            "reason": (
+                f"{signal} view from 7-day sentiment score {round(score_7d, 3)} "
+                f"with {news_count} relevant headline{'s' if news_count != 1 else ''}; "
+                f"dominant theme is {str(dominant_event).replace('_', ' ')}."
+            ),
+        },
+        "market_context": {
+            "last_price": _to_float(stock_row.get("last_price")),
+            "daily_change_pct": _to_float(stock_row.get("daily_change_pct")),
+            "pe": _to_float(stock_row.get("pe_ratio")),
+            "market_cap": _to_float(stock_row.get("market_cap")),
+            "range_position_pct": None,
+        },
+        "top_news": [
+            {
+                "ticker": row.get("ticker"),
+                "headline": _clean_headline(row.get("cleaned_headline")),
+                "source": row.get("source"),
+                "url": row.get("url"),
+                "published_at": row.get("published_at"),
+                "sentiment_label": row.get("sentiment_label"),
+                "impact_level": row.get("impact_level"),
+                "event_type": dominant_event,
+                "short_explanation_tag": row.get("short_explanation_tag"),
+                "confidence_score": confidence,
+                "weighted_score": score_7d,
+            }
+            for row in news_rows
+        ],
+        "meta": {
+            "source": "databricks_gold",
+            "provider": "databricks",
+            "gold_table": "gold_stock_insight_current",
+            "as_of_ts": stock_row.get("as_of_ts"),
+            "news_window": "24h_preferred",
+        },
+    }

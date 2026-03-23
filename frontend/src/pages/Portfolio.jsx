@@ -232,13 +232,13 @@ export default function Portfolio() {
   const selectedPreview = useMemo(() => searchPreviewBySymbol[String(selectedSymbol || "")] || null, [searchPreviewBySymbol, selectedSymbol]);
   const selectedQuickSentiment = useMemo(() => tradeSentimentBySymbol[String(selectedSymbol || "")] || null, [tradeSentimentBySymbol, selectedSymbol]);
 
-  async function fetchQuickSentiment(symbol, name = "") {
+  async function fetchQuickSentiment(symbol, name = "", force = false) {
     const sym = String(symbol || "").trim().toUpperCase();
     if (!sym) return;
     setTradeSentimentError("");
     setTradeSentimentBusySymbol(sym);
     try {
-      const data = await api.quickStockSentiment(sym, name || "");
+      const data = await api.quickStockSentiment(sym, name || "", force);
       setTradeSentimentBySymbol((prev) => ({ ...prev, [sym]: data }));
     } catch (e) {
       setTradeSentimentError(e.message || "Quick sentiment is unavailable right now.");
@@ -1026,7 +1026,7 @@ export default function Portfolio() {
                   <button
                     type="button"
                     className={`btn ghost sm ${tradeSentimentBusySymbol === selectedSymbol ? "btnBusy" : ""}`}
-                    onClick={() => fetchQuickSentiment(selectedSymbol, selectedName || selected?.name || "")}
+                    onClick={() => fetchQuickSentiment(selectedSymbol, selectedName || selected?.name || "", true)}
                     disabled={tradeSentimentBusySymbol === selectedSymbol}
                   >
                     {tradeSentimentBusySymbol === selectedSymbol ? "Refreshing..." : "Refresh"}
