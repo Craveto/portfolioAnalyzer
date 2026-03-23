@@ -56,6 +56,18 @@ function sentimentTone(label) {
   return "neutral";
 }
 
+function asText(v, fallback = "") {
+  if (v === null || v === undefined) return fallback;
+  if (typeof v === "string") return v || fallback;
+  if (typeof v === "number" || typeof v === "boolean") return String(v);
+  if (typeof v === "object") {
+    const candidate = v.displayName || v.name || v.shortName || v.longName || v.title || v.url;
+    if (typeof candidate === "string" && candidate.trim()) return candidate;
+    return fallback;
+  }
+  return fallback;
+}
+
 function verdictTone(label) {
   return sentimentTone(label);
 }
@@ -87,7 +99,7 @@ function buildFallbackMarkdown(insight) {
   if (!insight) return "# Stock Insight Report\n\nNot available.";
   const verdict = insight.verdict || {};
   const news = (insight.top_news || [])
-    .map((n) => `| ${(n.headline || "Untitled").replaceAll("|", "\\|")} | ${n.sentiment_label || "Unknown"} | ${n.impact_level || "Unknown"} | ${n.source || "Unknown"} |`)
+    .map((n) => `| ${(asText(n.headline, "Untitled")).replaceAll("|", "\\|")} | ${asText(n.sentiment_label, "Unknown")} | ${asText(n.impact_level, "Unknown")} | ${asText(n.source, "Unknown")} |`)
     .join("\n");
   const risks = (insight.risk_flags || []).length ? (insight.risk_flags || []).map((r) => `- ${r}`).join("\n") : "- No major risk flags";
   return `# ${insight.stock?.symbol || "Stock"} Sentiment Report
@@ -137,8 +149,8 @@ function buildFallbackCsvRows(insight) {
   const lines = rows.map((r) =>
     [
       esc(r.ticker || insight?.stock?.symbol || ""),
-      esc(r.headline),
-      esc(r.source),
+      esc(asText(r.headline, "")),
+      esc(asText(r.source, "")),
       esc(r.published_at),
       esc(r.sentiment_label),
       esc(r.impact_level),
@@ -159,7 +171,7 @@ function buildPrintableHtml(insight) {
   const newsHtml = (insight?.top_news || [])
     .map(
       (item) =>
-        `<tr><td>${item?.headline || "-"}</td><td>${item?.sentiment_label || "-"}</td><td>${item?.impact_level || "-"}</td><td>${item?.source || "-"}</td></tr>`
+        `<tr><td>${asText(item?.headline, "-")}</td><td>${asText(item?.sentiment_label, "-")}</td><td>${asText(item?.impact_level, "-")}</td><td>${asText(item?.source, "-")}</td></tr>`
     )
     .join("");
   const risksHtml = (insight?.risk_flags || []).map((item) => `<li>${item}</li>`).join("");
@@ -696,18 +708,18 @@ export default function Analysis() {
                   <div className="insightNewsList">
                     {(stockInsight.top_news || []).map((item) => (
                       <a
-                        key={`${item.headline}-${item.published_at || item.source}`}
+                        key={`${asText(item.headline, "headline")}-${item.published_at || asText(item.source, "source")}`}
                         className="insightNewsItem"
                         href={item.url || undefined}
                         target={item.url ? "_blank" : undefined}
                         rel={item.url ? "noreferrer" : undefined}
                       >
                         <div className="insightNewsHead">
-                          <div className="strong">{item.headline}</div>
-                          <div className={`insightMiniBadge ${sentimentTone(item.sentiment_label)}`}>{item.sentiment_label}</div>
+                          <div className="strong">{asText(item.headline, "Untitled")}</div>
+                          <div className={`insightMiniBadge ${sentimentTone(item.sentiment_label)}`}>{asText(item.sentiment_label, "Neutral")}</div>
                         </div>
                         <div className="muted small" style={{ marginTop: 6 }}>
-                          {item.source} • {item.impact_level} impact • {item.event_type.replaceAll("_", " ")}
+                          {asText(item.source, "Unknown")} • {asText(item.impact_level, "Unknown")} impact • {asText(item.event_type, "other").replaceAll("_", " ")}
                         </div>
                         <div className="muted small" style={{ marginTop: 6 }}>
                           {item.short_explanation_tag}

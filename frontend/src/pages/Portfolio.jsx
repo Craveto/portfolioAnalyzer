@@ -33,6 +33,18 @@ function toneClass(label) {
   return "neutral";
 }
 
+function asText(v, fallback = "") {
+  if (v === null || v === undefined) return fallback;
+  if (typeof v === "string") return v || fallback;
+  if (typeof v === "number" || typeof v === "boolean") return String(v);
+  if (typeof v === "object") {
+    const candidate = v.displayName || v.name || v.shortName || v.longName || v.title || v.url;
+    if (typeof candidate === "string" && candidate.trim()) return candidate;
+    return fallback;
+  }
+  return fallback;
+}
+
 function loadRecent() {
   try {
     const raw = localStorage.getItem("recentSymbols");
@@ -273,7 +285,7 @@ export default function Portfolio() {
     if (!selectedSymbol) return;
     const key = String(selectedSymbol);
     if (tradeSentimentBySymbol[key]) return;
-    fetchQuickSentiment(selectedSymbol, selectedName || selected?.name || "");
+    fetchQuickSentiment(selectedSymbol, selectedName || asText(selected?.name, ""));
   }, [selectedSymbol, selectedName, selected, tradeSentimentBySymbol]);
 
   useEffect(() => {
@@ -308,7 +320,7 @@ export default function Portfolio() {
       if (!Number.isFinite(priceNum) || priceNum <= 0) throw new Error("Trade price must be a number > 0 (no commas)");
       await api.createTransaction(portfolioId, {
         stock_symbol: selectedSymbol,
-        stock_name: selectedName || selected?.name,
+        stock_name: selectedName || asText(selected?.name, ""),
         side,
         qty,
         price
@@ -844,7 +856,7 @@ export default function Portfolio() {
                       const picked = list[Math.min(activeSearchIdx, list.length - 1)];
                       if (!picked) return;
                       setSelectedSymbol(picked.symbol);
-                      setSelectedName(picked.name || "");
+                      setSelectedName(asText(picked.name, ""));
                       setQ(`${picked.symbol}`);
                     }
                   }}
@@ -932,7 +944,7 @@ export default function Portfolio() {
                         .join(" ")}
                       onClick={() => {
                         setSelectedSymbol(s.symbol);
-                        setSelectedName(s.name || "");
+                        setSelectedName(asText(s.name, ""));
                         setQ(`${s.symbol}`);
                       }}
                     >
@@ -943,7 +955,7 @@ export default function Portfolio() {
                           </div>
                           <div>
                             <div className="mono strong">{s.symbol}</div>
-                            <div className="muted small">{s.name}</div>
+                            <div className="muted small">{asText(s.name, "")}</div>
                           </div>
                         </div>
                         <div className="searchItemStats" aria-label="Stock preview">
@@ -967,9 +979,9 @@ export default function Portfolio() {
                             onClick={(e) => {
                               e.stopPropagation();
                               setSelectedSymbol(s.symbol);
-                              setSelectedName(s.name || "");
+                              setSelectedName(asText(s.name, ""));
                               setQ(`${s.symbol}`);
-                              fetchQuickSentiment(s.symbol, s.name || "");
+                              fetchQuickSentiment(s.symbol, asText(s.name, ""));
                             }}
                             title="Quick sentiment summary"
                           >
@@ -990,7 +1002,7 @@ export default function Portfolio() {
                 <div className="kpi">
                   <div className="kpiLabel">Selected</div>
                   <div className="strong mono">{selectedSymbol}</div>
-                  <div className="muted small">{selectedName || selected?.name || ""}</div>
+                  <div className="muted small">{selectedName || asText(selected?.name, "")}</div>
                 </div>
                 <div className="kpi">
                   <div className="kpiLabel">Last price</div>
@@ -1026,7 +1038,7 @@ export default function Portfolio() {
                   <button
                     type="button"
                     className={`btn ghost sm ${tradeSentimentBusySymbol === selectedSymbol ? "btnBusy" : ""}`}
-                    onClick={() => fetchQuickSentiment(selectedSymbol, selectedName || selected?.name || "", true)}
+                    onClick={() => fetchQuickSentiment(selectedSymbol, selectedName || asText(selected?.name, ""), true)}
                     disabled={tradeSentimentBusySymbol === selectedSymbol}
                   >
                     {tradeSentimentBusySymbol === selectedSymbol ? "Refreshing..." : "Refresh"}
