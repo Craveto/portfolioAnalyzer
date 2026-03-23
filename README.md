@@ -1,4 +1,10 @@
-# Portfolio Analyzer
+# Portfolio Analyzer 
+Now you can play with this webapp on 
+https://thankful-forest-0dddffc00.2.azurestaticapps.net/
+
+<img width="1510" height="727" alt="image" src="https://github.com/user-attachments/assets/2aabbf4d-bcc5-432f-807f-5332452406f7" />
+
+
 
 Portfolio Analyzer is a full-stack stock portfolio analysis platform built with Django REST Framework, React, and a Databricks-ready analytics layer. It helps a user create portfolios, record buy/sell trades, monitor holdings, explore valuation metrics, review watchlists and price alerts, and analyze portfolio sentiment with report exports.
 
