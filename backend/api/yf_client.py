@@ -414,6 +414,24 @@ def search_indian_equities(query: str, max_results: int = 25) -> list[dict]:
         return cached
 
     s = yf.Search(query, max_results=max_results)
+    def _name_text(value, symbol: str) -> str:
+        if isinstance(value, str):
+            text = value.strip()
+            return text or symbol
+        if isinstance(value, dict):
+            for key in ("displayName", "name", "shortName", "longName", "title"):
+                candidate = value.get(key)
+                if isinstance(candidate, str) and candidate.strip():
+                    return candidate.strip()
+            url = value.get("url")
+            if isinstance(url, str) and url.strip():
+                return url.strip()
+            return symbol
+        if value is None:
+            return symbol
+        text = str(value).strip()
+        return text or symbol
+
     out: list[dict] = []
     for q in getattr(s, "quotes", []) or []:
         symbol = q.get("symbol")
@@ -423,7 +441,7 @@ def search_indian_equities(query: str, max_results: int = 25) -> list[dict]:
             continue
         if q.get("quoteType") not in (None, "EQUITY"):
             continue
-        name = q.get("longname") or q.get("shortname") or symbol
+        name = _name_text(q.get("longname") or q.get("shortname") or q.get("name"), symbol)
         exch = q.get("exchDisp") or q.get("exchange")
         out.append({"symbol": symbol, "name": name, "exchange": exch})
 
