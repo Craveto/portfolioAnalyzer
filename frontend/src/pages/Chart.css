@@ -102,6 +102,44 @@
   color: rgba(232, 238, 252, 0.7);
 }
 
+/* Portfolio > Transactions tab chart compatibility (fit viewport + horizontal scroll) */
+.transactionsChartBody .vbarWrap {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 8px;
+  scrollbar-width: thin;
+}
+
+.transactionsChartBody .vbarGrid {
+  width: max-content;
+  min-width: 100%;
+  grid-auto-columns: 108px;
+  min-height: 250px;
+}
+
+.transactionsChartBody .vbarTrack {
+  height: 190px;
+}
+
+.transactionsChartBody .vbarLabel {
+  max-width: 102px;
+}
+
+@media (max-width: 900px) {
+  .transactionsChartBody .vbarGrid {
+    grid-auto-columns: 92px;
+    min-height: 220px;
+  }
+
+  .transactionsChartBody .vbarTrack {
+    height: 165px;
+  }
+
+  .transactionsChartBody .vbarLabel {
+    max-width: 86px;
+  }
+}
+
 .histWrap {
   margin-top: 10px;
 }

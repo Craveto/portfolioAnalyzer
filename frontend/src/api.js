@@ -91,6 +91,40 @@ async function apiFetch(path, { method = "GET", body, auth = false } = {}) {
   throw lastErr || new Error("Request failed");
 }
 
+async function apiFetchMultipart(path, { method = "POST", formData, auth = false } = {}) {
+  const headers = {};
+  if (auth) {
+    const token = getToken();
+    if (token) headers.Authorization = `Token ${token}`;
+  }
+
+  const res = await fetch(`${API_BASE}${path}`, {
+    method,
+    headers,
+    body: formData
+  });
+
+  const text = await res.text();
+  let data = null;
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = text;
+    }
+  }
+  if (!res.ok) {
+    const msg = (() => {
+      if (!data) return `HTTP ${res.status}`;
+      if (typeof data === "string") return data;
+      if (typeof data === "object" && data.detail) return String(data.detail);
+      return `HTTP ${res.status}`;
+    })();
+    throw new Error(msg);
+  }
+  return data;
+}
+
 export const api = {
   marketSummary() {
     return apiFetch("/api/market/summary/");
@@ -183,6 +217,22 @@ export const api = {
   },
   createPortfolio({ name }) {
     return apiFetch("/api/portfolios/", { method: "POST", body: { name }, auth: true });
+  },
+  previewPortfolioCsv({ file, groupBySector = false, baseName = "Imported Portfolio" }) {
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("mode", "preview");
+    fd.append("group_by_sector", groupBySector ? "true" : "false");
+    fd.append("base_name", baseName);
+    return apiFetchMultipart("/api/portfolios/import-csv/", { method: "POST", formData: fd, auth: true });
+  },
+  importPortfolioCsv({ file, groupBySector = false, baseName = "Imported Portfolio" }) {
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("mode", "import");
+    fd.append("group_by_sector", groupBySector ? "true" : "false");
+    fd.append("base_name", baseName);
+    return apiFetchMultipart("/api/portfolios/import-csv/", { method: "POST", formData: fd, auth: true });
   },
   getPortfolio(portfolioId, force = false) {
     const qs = force ? "?force=1" : "";

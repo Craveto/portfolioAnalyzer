@@ -123,6 +123,7 @@ export default function NavBar({
   actions = null,
   className = "",
   showThemeToggle = true,
+  showBrandMeta = false,
   mobileTabs = true,
   mobileTabsMax = 4
 }) {
@@ -130,6 +131,7 @@ export default function NavBar({
   const [open, setOpen] = useState(false);
   const [themeOpen, setThemeOpen] = useState(false);
   const [themeAnchor, setThemeAnchor] = useState(null);
+  const [tick, setTick] = useState(Date.now());
   const [theme, setTheme] = useState(() => {
     try {
       const saved = localStorage.getItem(THEME_KEY);
@@ -183,21 +185,65 @@ export default function NavBar({
     }
   }, [theme]);
 
+  useEffect(() => {
+    const id = window.setInterval(() => setTick(Date.now()), 30000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  const marketStatus = useMemo(() => {
+    const now = new Date(tick);
+    const readLocalParts = (timeZone) => {
+      const parts = new Intl.DateTimeFormat("en-US", {
+        timeZone,
+        weekday: "short",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false
+      }).formatToParts(now);
+      const map = Object.fromEntries(parts.map((p) => [p.type, p.value]));
+      const day = map.weekday || "";
+      const hh = Number(map.hour || 0);
+      const mm = Number(map.minute || 0);
+      return { day, mins: hh * 60 + mm };
+    };
+
+    const isWeekend = (day) => day === "Sat" || day === "Sun";
+    const calc = (label, tz, startMin, endMin) => {
+      const local = readLocalParts(tz);
+      const open = !isWeekend(local.day) && local.mins >= startMin && local.mins <= endMin;
+      return { label, open };
+    };
+
+    const india = calc("IN", "Asia/Kolkata", 9 * 60 + 15, 15 * 60 + 30);
+    const us = calc("US", "America/New_York", 9 * 60 + 30, 16 * 60);
+    const syncAt = new Intl.DateTimeFormat(undefined, {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit"
+    }).format(now);
+    return { india, us, syncAt };
+  }, [tick]);
+
   const themeLabel = THEMES.find((t) => t.id === theme)?.label || "Theme";
   const activeTheme = THEMES.find((t) => t.id === theme) || THEMES[0];
   const renderThemeBtn = () =>
     showThemeToggle ? (
       <button
-        className="themeBtn"
+        className="themeBtn iconOnly"
         type="button"
         onClick={(e) => {
           const same = themeAnchor === e.currentTarget;
           setThemeAnchor(e.currentTarget);
           setThemeOpen((v) => (same ? !v : true));
         }}
-        aria-label={`Theme: ${themeLabel}`}
+        aria-label={`Theme picker. Current: ${themeLabel}`}
         title={`Theme: ${themeLabel}`}
       >
+        <span className="themeIcon" aria-hidden="true">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+            <path d="M12 3.5l1.9 3.9 4.3.6-3.1 3 0.7 4.2L12 13.2l-3.8 2 0.7-4.2-3.1-3 4.3-.6L12 3.5Z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
+          </svg>
+        </span>
         <span className="themeDot" aria-hidden="true" />
         <span className="themeBtnLabel">{themeLabel}</span>
       </button>
@@ -210,10 +256,12 @@ export default function NavBar({
           <Link className="brandLink" to={homeTo} aria-label="Home">
             <div className="logo">EDA</div>
           </Link>
-          <div>
-            <div className="brandTitle">{title}</div>
-            {subtitle ? <div className="brandSub">{subtitle}</div> : null}
-          </div>
+          {showBrandMeta ? (
+            <div className="brandMeta">
+              <div className="brandTitle">{title}</div>
+              {subtitle ? <div className="brandSub">{subtitle}</div> : null}
+            </div>
+          ) : null}
         </div>
 
         <div className="navRight">
@@ -230,11 +278,22 @@ export default function NavBar({
                   }}
                   title={l.title || l.label}
                 >
-                  {l.label}
+                  <span className="navItemIcon">{navIcon(l.to)}</span>
+                  <span className="navItemLabel">{l.label}</span>
                 </NavLink>
               ))}
             </nav>
           ) : null}
+
+          <div className="navStatusChips" aria-label="Live status">
+            <span className={marketStatus.india.open ? "statusChip open" : "statusChip closed"}>
+              {marketStatus.india.label} {marketStatus.india.open ? "Open" : "Closed"}
+            </span>
+            <span className={marketStatus.us.open ? "statusChip open" : "statusChip closed"}>
+              {marketStatus.us.label} {marketStatus.us.open ? "Open" : "Closed"}
+            </span>
+            <span className="statusChip sync">Sync {marketStatus.syncAt}</span>
+          </div>
 
           {actions || showThemeToggle ? <div className="navActions">{renderThemeBtn()}{actions}</div> : null}
 
@@ -289,6 +348,15 @@ export default function NavBar({
               </div>
               {actions || showThemeToggle ? (
                 <div className="navMobileActions">
+                  <div className="navStatusChips mobile" aria-label="Live status">
+                    <span className={marketStatus.india.open ? "statusChip open" : "statusChip closed"}>
+                      {marketStatus.india.label} {marketStatus.india.open ? "Open" : "Closed"}
+                    </span>
+                    <span className={marketStatus.us.open ? "statusChip open" : "statusChip closed"}>
+                      {marketStatus.us.label} {marketStatus.us.open ? "Open" : "Closed"}
+                    </span>
+                    <span className="statusChip sync">Sync {marketStatus.syncAt}</span>
+                  </div>
                   <div className="navMobileUtilityRow">
                     {renderThemeBtn()}
                     <button className="navMobileCloseWide" type="button" onClick={() => setOpen(false)} aria-label="Close menu">

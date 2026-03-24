@@ -13,11 +13,14 @@ class Stock(models.Model):
     EXCHANGE_CHOICES = [
         ("NSE", "NSE"),
         ("BSE", "BSE"),
+        ("NASDAQ", "NASDAQ"),
+        ("NYSE", "NYSE"),
+        ("US", "US"),
     ]
 
     symbol = models.CharField(max_length=32, unique=True)
     name = models.CharField(max_length=200)
-    exchange = models.CharField(max_length=8, choices=EXCHANGE_CHOICES, default="NSE")
+    exchange = models.CharField(max_length=8, choices=EXCHANGE_CHOICES, default="US")
     sector = models.ForeignKey(Sector, null=True, blank=True, on_delete=models.SET_NULL)
     is_active = models.BooleanField(default=True)
 
