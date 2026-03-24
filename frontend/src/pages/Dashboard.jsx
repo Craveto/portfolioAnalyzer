@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { api, clearTokens } from "../api.js";
 import { Link, useNavigate } from "react-router-dom";
 import NavBar from "../components/NavBar.jsx";
@@ -41,6 +41,17 @@ export default function Dashboard() {
   const [busyId, setBusyId] = useState(null);
   const [infoKey, setInfoKey] = useState("");
   const [marketFetchedAt, setMarketFetchedAt] = useState(() => loadDashboardCache()?.savedAt || null);
+  const [quickImportOpen, setQuickImportOpen] = useState(false);
+  const [quickImportFile, setQuickImportFile] = useState(null);
+  const [quickImportGroupBySector, setQuickImportGroupBySector] = useState(false);
+  const [quickImportPreview, setQuickImportPreview] = useState(null);
+  const [quickPreviewBusy, setQuickPreviewBusy] = useState(false);
+  const [quickImportBusy, setQuickImportBusy] = useState(false);
+  const [quickImportError, setQuickImportError] = useState("");
+  const [quickImportResult, setQuickImportResult] = useState(null);
+  const [quickProgress, setQuickProgress] = useState(0);
+  const [quickPhase, setQuickPhase] = useState("");
+  const progressTimerRef = useRef(null);
 
   useEffect(() => {
     refreshSummary(false);
@@ -49,6 +60,24 @@ export default function Dashboard() {
   useEffect(() => {
     // keep the dashboard snappy; portfolios are loaded via summary
   }, []);
+
+  function stopProgress(finalPercent = null) {
+    if (progressTimerRef.current) {
+      clearInterval(progressTimerRef.current);
+      progressTimerRef.current = null;
+    }
+    if (finalPercent !== null) setQuickProgress(finalPercent);
+  }
+
+  function startProgress(phaseLabel) {
+    stopProgress(8);
+    setQuickPhase(phaseLabel);
+    progressTimerRef.current = setInterval(() => {
+      setQuickProgress((prev) => (prev >= 92 ? prev : prev + (prev < 40 ? 8 : prev < 75 ? 4 : 1)));
+    }, 180);
+  }
+
+  useEffect(() => () => stopProgress(null), []);
 
   async function refreshSummary(force = false) {
     try {
@@ -192,6 +221,9 @@ export default function Dashboard() {
                 Set default portfolio
               </Link>
             )}
+            <button className="btn ghost" type="button" onClick={() => setQuickImportOpen(true)}>
+              Quick Stocks Add
+            </button>
             <button className="btn ghost" onClick={() => refreshSummary(true).catch(() => {})}>
               Refresh
             </button>
@@ -381,6 +413,283 @@ export default function Dashboard() {
         summary={summary}
         onClose={() => setInfoKey("")}
       />
+
+      <QuickStocksAddModal
+        open={quickImportOpen}
+        file={quickImportFile}
+        groupBySector={quickImportGroupBySector}
+        preview={quickImportPreview}
+        previewBusy={quickPreviewBusy}
+        busy={quickImportBusy}
+        progress={quickProgress}
+        phase={quickPhase}
+        error={quickImportError}
+        result={quickImportResult}
+        onClose={() => {
+          if (quickImportBusy || quickPreviewBusy) return;
+          setQuickImportOpen(false);
+          setQuickImportError("");
+          setQuickImportResult(null);
+          setQuickImportPreview(null);
+          setQuickProgress(0);
+          setQuickPhase("");
+          stopProgress(0);
+        }}
+        onFileChange={(f) => {
+          setQuickImportFile(f);
+          setQuickImportError("");
+          setQuickImportResult(null);
+          setQuickImportPreview(null);
+          setQuickProgress(0);
+          setQuickPhase("");
+          stopProgress(0);
+        }}
+        onToggleGroupBySector={(v) => {
+          setQuickImportGroupBySector(v);
+          setQuickImportPreview(null);
+          setQuickImportResult(null);
+        }}
+        onPreview={async () => {
+          if (!quickImportFile || quickImportBusy || quickPreviewBusy) return;
+          setQuickPreviewBusy(true);
+          setQuickImportError("");
+          setQuickImportResult(null);
+          startProgress("Previewing CSV");
+          try {
+            const preview = await api.previewPortfolioCsv({
+              file: quickImportFile,
+              groupBySector: quickImportGroupBySector,
+              baseName: `CSV Import ${new Date().toISOString().slice(0, 10)}`
+            });
+            setQuickImportPreview(preview);
+            stopProgress(100);
+          } catch (e) {
+            setQuickImportError(e.message || "CSV preview failed");
+            setQuickImportPreview(null);
+            stopProgress(0);
+          } finally {
+            setQuickPreviewBusy(false);
+            window.setTimeout(() => {
+              setQuickProgress((p) => (p === 100 ? 0 : p));
+              setQuickPhase("");
+            }, 700);
+          }
+        }}
+        onImport={async () => {
+          if (!quickImportFile || quickImportBusy || quickPreviewBusy) return;
+          if (!quickImportPreview || !Number(quickImportPreview.rows_resolved || 0)) {
+            setQuickImportError("Please run Preview first and ensure at least one stock is resolved.");
+            return;
+          }
+          setQuickImportBusy(true);
+          setQuickImportError("");
+          setQuickImportResult(null);
+          startProgress("Creating portfolios");
+          try {
+            const imported = await api.importPortfolioCsv({
+              file: quickImportFile,
+              groupBySector: quickImportGroupBySector,
+              baseName: `CSV Import ${new Date().toISOString().slice(0, 10)}`
+            });
+            setQuickImportResult(imported);
+            await refreshSummary(true);
+            stopProgress(100);
+          } catch (e) {
+            setQuickImportError(e.message || "CSV import failed");
+            stopProgress(0);
+          } finally {
+            setQuickImportBusy(false);
+            window.setTimeout(() => {
+              setQuickProgress((p) => (p === 100 ? 0 : p));
+              setQuickPhase("");
+            }, 900);
+          }
+        }}
+      />
+    </div>
+  );
+}
+
+function QuickStocksAddModal({
+  open,
+  file,
+  groupBySector,
+  preview,
+  previewBusy,
+  busy,
+  progress,
+  phase,
+  error,
+  result,
+  onClose,
+  onFileChange,
+  onToggleGroupBySector,
+  onPreview,
+  onImport
+}) {
+  const fileInputRef = useRef(null);
+  const [dragActive, setDragActive] = useState(false);
+  const previewRows = Array.isArray(preview?.resolved_preview) ? preview.resolved_preview.slice(0, 18) : [];
+  const completedApprox = Math.floor((Math.max(0, Math.min(100, progress || 0)) / 100) * previewRows.length);
+  const importLog = Array.isArray(result?.import_log) ? result.import_log.slice(0, 18) : [];
+
+  if (!open) return null;
+
+  return (
+    <div className="modalBackdrop" role="dialog" aria-modal="true" aria-label="Quick stocks add">
+      <div className="modal">
+        <div className="modalHeader">
+          <h2>Quick Stocks Add</h2>
+          <button className="btn ghost" onClick={onClose} type="button" disabled={busy || previewBusy}>
+            Close
+          </button>
+        </div>
+
+        <div className="muted" style={{ marginTop: 8 }}>
+          Step 1: Upload CSV. Step 2: Preview auto-matched stocks. Step 3: Create portfolios and BUY transactions.
+        </div>
+
+        <div
+          className={`csvDropZone ${dragActive ? "active" : ""}`}
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDragActive(true);
+          }}
+          onDragEnter={(e) => {
+            e.preventDefault();
+            setDragActive(true);
+          }}
+          onDragLeave={(e) => {
+            e.preventDefault();
+            if (e.currentTarget.contains(e.relatedTarget)) return;
+            setDragActive(false);
+          }}
+          onDrop={(e) => {
+            e.preventDefault();
+            setDragActive(false);
+            const dropped = e.dataTransfer?.files?.[0];
+            if (dropped) onFileChange(dropped);
+          }}
+        >
+          <div className="strong">Drag & drop CSV here</div>
+          <div className="muted small" style={{ marginTop: 4 }}>
+            or choose a file manually
+          </div>
+          <div style={{ marginTop: 10 }}>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".csv,text/csv"
+              style={{ display: "none" }}
+              onChange={(e) => onFileChange(e.target.files?.[0] || null)}
+            />
+            <button className="btn sm" type="button" onClick={() => fileInputRef.current?.click()}>
+              Browse CSV
+            </button>
+          </div>
+          {file ? <div className="csvFileTag">{file.name}</div> : null}
+        </div>
+
+        <div className="modalFooter" style={{ marginTop: 12, display: "flex", justifyContent: "space-between" }}>
+          <div className="muted small">Preview validates and matches your stocks before import.</div>
+          <button className="btn sm" type="button" onClick={onPreview} disabled={!file || busy || previewBusy}>
+            {previewBusy ? "Previewing..." : "Preview CSV"}
+          </button>
+        </div>
+
+        {error ? <div className="error">{error}</div> : null}
+
+        {(previewBusy || busy || progress > 0) ? (
+          <div className="csvProgressWrap">
+            <div className="csvProgressMeta">
+              <span>{phase || (busy ? "Creating portfolios" : "Working...")}</span>
+              <span>{Math.max(0, Math.min(100, Math.round(progress || 0)))}%</span>
+            </div>
+            <div className="csvProgressBar">
+              <div className="csvProgressFill" style={{ width: `${Math.max(0, Math.min(100, progress || 0))}%` }} />
+            </div>
+          </div>
+        ) : null}
+
+        {preview ? (
+          <div className="csvImportSummary">
+            <div className="strong">Preview completed</div>
+            <div className="muted small">
+              Resolved {preview.rows_resolved}/{preview.rows_received} rows, skipped {preview.rows_skipped}.
+            </div>
+            <div className="muted small">
+              Tentative portfolios: {(preview.tentative_portfolios || []).map((p) => `${p.name} (${p.stock_count})`).join(", ") || "None"}
+            </div>
+            {(preview.skipped_preview || []).length ? (
+              <div className="muted small" style={{ marginTop: 6 }}>
+                Skipped examples: {(preview.skipped_preview || []).slice(0, 5).map((s) => `#${s.row} ${s.reason}`).join(" | ")}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        {preview ? (
+          <label className="label" style={{ marginTop: 12 }}>
+            Create portfolios by
+            <select
+              className="input"
+              value={groupBySector ? "sector" : "single"}
+              onChange={(e) => onToggleGroupBySector(e.target.value === "sector")}
+              disabled={busy || previewBusy}
+            >
+              <option value="single">No split (one portfolio)</option>
+              <option value="sector">Split by sector</option>
+            </select>
+          </label>
+        ) : null}
+
+        {result ? (
+          <div className="csvImportSummary">
+            <div className="strong">Import completed</div>
+            <div className="muted small">
+              Processed {result.rows_processed}/{result.rows_received} rows.
+            </div>
+            <div className="muted small">BUY transactions created: {result.transactions_created ?? result.rows_processed ?? 0}</div>
+            <div className="muted small">
+              Created portfolios: {(result.created_portfolios || []).map((p) => `${p.name} (#${p.id})`).join(", ") || "None"}
+            </div>
+          </div>
+        ) : null}
+
+        {(previewRows.length && (previewBusy || busy || result)) ? (
+          <div className="csvRuntimePanel">
+            <div className="strong">Stock processing status</div>
+            <div className="csvRuntimeList">
+              {result
+                ? (importLog.length ? importLog : previewRows).map((it, idx) => (
+                    <div className="csvRuntimeRow" key={`done-${idx}-${it.symbol}`}>
+                      <span className="mono">{it.symbol}</span>
+                      <span className="csvRuntimeState done">Completed</span>
+                    </div>
+                  ))
+                : previewRows.map((it, idx) => {
+                    const state = idx < completedApprox ? "done" : idx === completedApprox ? "active" : "wait";
+                    const label = state === "done" ? "Completed" : state === "active" ? "Processing..." : "Pending";
+                    return (
+                      <div className="csvRuntimeRow" key={`rt-${idx}-${it.symbol}`}>
+                        <span className="mono">{it.symbol}</span>
+                        <span className={`csvRuntimeState ${state}`}>{label}</span>
+                      </div>
+                    );
+                  })}
+            </div>
+          </div>
+        ) : null}
+
+        <div className="modalFooter" style={{ marginTop: 14 }}>
+          <button className="btn ghost" type="button" onClick={onClose} disabled={busy || previewBusy}>
+            Cancel
+          </button>
+          <button className="btn primary" type="button" onClick={onImport} disabled={!file || !preview || busy || previewBusy}>
+            {busy ? `Creating... ${Math.round(progress || 0)}%` : "Create Portfolios"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

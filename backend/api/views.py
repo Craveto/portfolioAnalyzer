@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import csv
+import difflib
+import io
 import os
 import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from decimal import Decimal
 
 from django.contrib.auth import authenticate
@@ -17,7 +21,7 @@ from rest_framework.views import APIView
 
 from accounts.models import UserProfile
 from .models import CachedPayload
-from portfolio.models import Holding, Portfolio, Stock, Transaction
+from portfolio.models import Holding, Portfolio, Sector, Stock, Transaction
 from watchlist.models import PriceAlert, WatchlistItem
 
 from .serializers import (
@@ -49,7 +53,7 @@ from .yf_client import (
     metals_news,
     metals_quote_fast,
     metals_summary,
-    search_indian_equities,
+    search_equities,
 )
 
 
@@ -57,10 +61,24 @@ _refresh_flags: dict[str, bool] = {}
 _refresh_lock = threading.Lock()
 
 
-def _get_or_create_stock(symbol: str, name_hint: str | None = None) -> Stock:
+def _infer_exchange(symbol: str, exchange_hint: str | None = None) -> str:
+    symbol = (symbol or "").strip().upper()
+    hint = (exchange_hint or "").strip().upper()
+    if symbol.endswith(".NS") or "NSE" in hint:
+        return "NSE"
+    if symbol.endswith(".BO") or "BSE" in hint:
+        return "BSE"
+    if "NASDAQ" in hint:
+        return "NASDAQ"
+    if "NYSE" in hint:
+        return "NYSE"
+    return "US"
+
+
+def _get_or_create_stock(symbol: str, name_hint: str | None = None, exchange_hint: str | None = None) -> Stock:
     symbol = (symbol or "").strip().upper()
     name_hint = (name_hint or "").strip()
-    exchange = "NSE" if symbol.endswith(".NS") else ("BSE" if symbol.endswith(".BO") else "NSE")
+    exchange = _infer_exchange(symbol, exchange_hint)
     stock, created = Stock.objects.get_or_create(
         symbol=symbol,
         defaults={"name": name_hint or symbol, "exchange": exchange},
@@ -70,6 +88,74 @@ def _get_or_create_stock(symbol: str, name_hint: str | None = None) -> Stock:
         stock.exchange = exchange
         stock.save(update_fields=["name", "exchange"])
     return stock
+
+
+def _normalize_csv_header(name: str) -> str:
+    text = (name or "").strip().lower()
+    return "".join(ch for ch in text if ch.isalnum() or ch == "_")
+
+
+def _csv_pick(row: dict, keys: list[str]) -> str:
+    for key in keys:
+        value = row.get(key)
+        if value is not None and str(value).strip():
+            return str(value).strip()
+    return ""
+
+
+def _decimal_or_none(value: str) -> Decimal | None:
+    text = (value or "").strip().replace(",", "")
+    if not text:
+        return None
+    try:
+        num = Decimal(text)
+        return num
+    except Exception:
+        return None
+
+
+def _looks_like_symbol(value: str) -> bool:
+    text = (value or "").strip().upper()
+    if not text or text.startswith("^"):
+        return False
+    if text.endswith(".NS") or text.endswith(".BO"):
+        return True
+    # US-like symbols: AAPL, MSFT, BRK-B, TCS.TO
+    return bool(text) and all(ch.isalnum() or ch in {".", "-"} for ch in text)
+
+
+def _parse_import_csv(uploaded_file) -> list[dict]:
+    raw = uploaded_file.read()
+    text = ""
+    for enc in ("utf-8-sig", "utf-8", "latin-1"):
+        try:
+            text = raw.decode(enc)
+            break
+        except Exception:
+            continue
+    if not text:
+        return []
+
+    sample = text[:4096]
+    delimiter = ","
+    try:
+        dialect = csv.Sniffer().sniff(sample, delimiters=",;\t|")
+        delimiter = dialect.delimiter or ","
+    except Exception:
+        delimiter = ","
+
+    reader = csv.DictReader(io.StringIO(text), delimiter=delimiter)
+    if not reader.fieldnames:
+        return []
+
+    field_map = {name: _normalize_csv_header(name) for name in reader.fieldnames}
+    rows: list[dict] = []
+    for src_row in reader:
+        normalized = {}
+        for orig_name, norm_name in field_map.items():
+            normalized[norm_name] = src_row.get(orig_name)
+        rows.append(normalized)
+    return rows
 
 
 def _compute_market_summary(top_universe: list[str]) -> dict:
@@ -373,11 +459,17 @@ def _compute_portfolio_snapshot(portfolio: Portfolio) -> dict:
 
     symbols = [h.stock.symbol for h in holdings]
     quotes: dict[str, dict] = {}
-    for symbol in symbols:
-        try:
-            quotes[symbol] = get_fast_quote(symbol)
-        except Exception:
-            quotes[symbol] = {"ticker": symbol, "last_price": None}
+    unique_symbols = list(dict.fromkeys([s for s in symbols if s]))
+    if unique_symbols:
+        max_workers = max(2, min(10, len(unique_symbols)))
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_map = {executor.submit(get_fast_quote, sym): sym for sym in unique_symbols}
+            for future in as_completed(future_map):
+                sym = future_map[future]
+                try:
+                    quotes[sym] = future.result() or {"ticker": sym, "last_price": None}
+                except Exception:
+                    quotes[sym] = {"ticker": sym, "last_price": None}
 
     for item in holdings_data:
         symbol = item.get("stock", {}).get("symbol")
@@ -600,7 +692,7 @@ class StocksLiveSearchView(APIView):
         db_items = {s.symbol: {"id": s.id, "symbol": s.symbol, "name": s.name, "exchange": s.exchange} for s in db_qs}
 
         try:
-            live = search_indian_equities(q, max_results=25)
+            live = search_equities(q, max_results=40)
         except Exception:
             live = []
 
@@ -735,6 +827,288 @@ class PortfoliosListCreateView(APIView):
         serializer.is_valid(raise_exception=True)
         portfolio = Portfolio.objects.create(user=request.user, **serializer.validated_data)
         return Response(PortfolioSerializer(portfolio).data, status=status.HTTP_201_CREATED)
+
+
+class PortfolioCsvImportView(APIView):
+    """
+    CSV-driven quick portfolio import.
+
+    Expected CSV columns (flexible headers):
+    - symbol/ticker/stock_symbol
+    - name/stock_name/company
+    - qty/quantity/shares (optional, default 1)
+    - price/avg_buy_price/buy_price (optional; falls back to quote, then 1)
+    - sector/industry (optional)
+    """
+
+    def post(self, request):
+        uploaded = request.FILES.get("file")
+        if uploaded is None:
+            return Response({"detail": "CSV file is required in field 'file'."}, status=status.HTTP_400_BAD_REQUEST)
+
+        mode = (request.data.get("mode") or "import").strip().lower()
+        if mode not in {"preview", "import"}:
+            return Response({"detail": "mode must be 'preview' or 'import'."}, status=status.HTTP_400_BAD_REQUEST)
+
+        group_by_sector = str(request.data.get("group_by_sector", "false")).strip().lower() in {"1", "true", "yes", "on"}
+        base_name = (request.data.get("base_name") or "Imported Portfolio").strip() or "Imported Portfolio"
+
+        rows = _parse_import_csv(uploaded)
+        if not rows:
+            return Response({"detail": "No rows found in CSV."}, status=status.HTTP_400_BAD_REQUEST)
+
+        symbol_keys = ["symbol", "ticker", "stocksymbol", "stock_symbol", "tradingsymbol", "security", "code"]
+        name_keys = ["name", "stockname", "stock_name", "company", "companyname", "company_name"]
+        qty_keys = ["qty", "quantity", "shares", "units"]
+        price_keys = ["price", "avgbuyprice", "avg_buy_price", "avgprice", "buyprice", "buy_price", "cost"]
+        sector_keys = ["sector", "industry", "theme", "bucket"]
+
+        resolved_rows: list[dict] = []
+        skipped: list[dict] = []
+
+        def _best_search_match(query: str, symbol_hint: str = "") -> dict | None:
+            q = (query or "").strip()
+            if not q:
+                return None
+            try:
+                results = search_equities(q, max_results=12)
+            except Exception:
+                results = []
+            if not results:
+                return None
+            hint = (symbol_hint or "").strip().upper()
+            if hint:
+                exact = next((x for x in results if str(x.get("symbol", "")).upper() == hint), None)
+                if exact:
+                    return exact
+                pref = next((x for x in results if str(x.get("symbol", "")).upper().startswith(f"{hint}.")), None)
+                if pref:
+                    return pref
+            q_upper = q.upper()
+            scored = []
+            for item in results:
+                sym = str(item.get("symbol") or "").upper()
+                name = str(item.get("name") or "")
+                sym_score = difflib.SequenceMatcher(None, q_upper, sym).ratio()
+                name_score = difflib.SequenceMatcher(None, q.lower(), name.lower()).ratio() if name else 0.0
+                bonus = 0.2 if sym.startswith(q_upper) else 0.0
+                scored.append((sym_score * 0.65 + name_score * 0.35 + bonus, item))
+            scored.sort(key=lambda x: x[0], reverse=True)
+            return scored[0][1] if scored else results[0]
+
+        def _portfolio_name_for_sector(sector_name: str | None) -> str:
+            if not group_by_sector:
+                return base_name
+            bucket = (sector_name or "").strip() or "Uncategorized"
+            return f"{base_name} - {bucket}"
+
+        for idx, row in enumerate(rows, start=1):
+            raw_symbol = _csv_pick(row, symbol_keys).upper()
+            raw_name = _csv_pick(row, name_keys)
+            raw_sector = _csv_pick(row, sector_keys)
+
+            qty = _decimal_or_none(_csv_pick(row, qty_keys)) or Decimal("1")
+            if qty <= 0:
+                skipped.append({"row": idx, "reason": "qty must be > 0"})
+                continue
+
+            search_match = None
+            symbol = raw_symbol
+            name = raw_name
+            exchange_hint = ""
+
+            if symbol and "." in symbol and _looks_like_symbol(symbol):
+                # Already exchange-qualified (AAPL, INFY.NS, TCS.BO, etc).
+                exchange_hint = _infer_exchange(symbol)
+            elif symbol:
+                # For bare symbols from CSV (ADANIENT, AXISBANK), try best match first.
+                search_match = _best_search_match(raw_name or symbol, symbol_hint=symbol)
+            elif name:
+                search_match = _best_search_match(name)
+            else:
+                skipped.append({"row": idx, "reason": "missing symbol and name"})
+                continue
+
+            if search_match:
+                symbol = str(search_match.get("symbol") or symbol or "").strip().upper()
+                exchange_hint = str(search_match.get("exchange") or "")
+                if not name:
+                    name = str(search_match.get("name") or symbol)
+            elif symbol and _looks_like_symbol(symbol):
+                exchange_hint = _infer_exchange(symbol)
+                if "." not in symbol:
+                    # Try common Indian suffixes when CSV has bare symbol.
+                    ns_symbol = f"{symbol}.NS"
+                    bo_symbol = f"{symbol}.BO"
+                    try:
+                        ns_q = get_fast_quote(ns_symbol)
+                        if ns_q.get("last_price") is not None:
+                            symbol = ns_symbol
+                            exchange_hint = "NSE"
+                        else:
+                            bo_q = get_fast_quote(bo_symbol)
+                            if bo_q.get("last_price") is not None:
+                                symbol = bo_symbol
+                                exchange_hint = "BSE"
+                    except Exception:
+                        pass
+
+            if not symbol:
+                skipped.append({"row": idx, "reason": "unable to resolve stock symbol"})
+                continue
+
+            price = _decimal_or_none(_csv_pick(row, price_keys))
+            if price is None or price <= 0:
+                # Keep import deterministic/fast; avoid per-row network quote calls.
+                price = Decimal("1")
+
+            sector_name = raw_sector
+            if not sector_name and group_by_sector:
+                try:
+                    f = get_fundamentals(symbol) or {}
+                    sector_name = str(f.get("sector") or "").strip()
+                except Exception:
+                    sector_name = ""
+
+            resolved_rows.append(
+                {
+                    "row": idx,
+                    "symbol": symbol,
+                    "name": name or symbol,
+                    "exchange": exchange_hint or _infer_exchange(symbol),
+                    "qty": str(qty),
+                    "price": str(price),
+                    "sector": sector_name or "",
+                    "portfolio_name": _portfolio_name_for_sector(sector_name if group_by_sector else None),
+                }
+            )
+
+        tentative_counts: dict[str, int] = {}
+        for item in resolved_rows:
+            pname = item["portfolio_name"]
+            tentative_counts[pname] = tentative_counts.get(pname, 0) + 1
+        tentative_portfolios = [{"name": k, "stock_count": v} for k, v in tentative_counts.items()]
+
+        if mode == "preview":
+            return Response(
+                {
+                    "mode": "preview",
+                    "rows_received": len(rows),
+                    "rows_resolved": len(resolved_rows),
+                    "rows_skipped": len(skipped),
+                    "grouped_by_sector": group_by_sector,
+                    "tentative_portfolios": tentative_portfolios,
+                    "resolved_preview": resolved_rows[:50],
+                    "skipped_preview": skipped[:50],
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        if not resolved_rows:
+            return Response(
+                {
+                    "detail": "No valid stock rows found in CSV. Nothing imported.",
+                    "rows_received": len(rows),
+                    "rows_skipped": len(skipped),
+                    "skipped_preview": skipped[:50],
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        created_portfolios: dict[str, Portfolio] = {}
+        portfolio_stock_counts: dict[int, int] = {}
+        processed = 0
+        import_log: list[dict] = []
+
+        with db_transaction.atomic():
+            for item in resolved_rows:
+                symbol = item["symbol"]
+                name = item["name"]
+                qty = Decimal(item["qty"])
+                price = Decimal(item["price"])
+                exchange_hint = item.get("exchange") or ""
+                sector_name = item.get("sector") or ""
+                pname = item["portfolio_name"]
+
+                key = pname.lower()
+                portfolio = created_portfolios.get(key)
+                if portfolio is None:
+                    portfolio = Portfolio.objects.create(user=request.user, name=pname)
+                    created_portfolios[key] = portfolio
+                    portfolio_stock_counts[portfolio.id] = 0
+
+                stock = _get_or_create_stock(symbol, name_hint=name, exchange_hint=exchange_hint)
+                if sector_name:
+                    sector_obj, _ = Sector.objects.get_or_create(name=sector_name)
+                    if stock.sector_id != sector_obj.id:
+                        stock.sector = sector_obj
+                        stock.save(update_fields=["sector"])
+
+                holding = Holding.objects.select_for_update().filter(portfolio=portfolio, stock=stock).first()
+                if holding is None:
+                    Holding.objects.create(portfolio=portfolio, stock=stock, qty=qty, avg_buy_price=price)
+                    portfolio_stock_counts[portfolio.id] = (portfolio_stock_counts.get(portfolio.id, 0) + 1)
+                else:
+                    total_cost = (holding.avg_buy_price * holding.qty) + (price * qty)
+                    new_qty = holding.qty + qty
+                    holding.qty = new_qty
+                    holding.avg_buy_price = (total_cost / new_qty) if new_qty else holding.avg_buy_price
+                    holding.save()
+
+                # Ensure imported stocks always enter through BUY transactions.
+                Transaction.objects.create(
+                    portfolio=portfolio,
+                    stock=stock,
+                    side="BUY",
+                    qty=qty,
+                    price=price,
+                    realized_pnl=Decimal("0"),
+                )
+                processed += 1
+                import_log.append(
+                    {
+                        "row": item.get("row"),
+                        "symbol": symbol,
+                        "portfolio_name": portfolio.name,
+                        "status": "completed",
+                    }
+                )
+
+        out_portfolios = [
+            {"id": p.id, "name": p.name, "stock_count": portfolio_stock_counts.get(p.id, 0)}
+            for p in created_portfolios.values()
+        ]
+
+        created_ids = [p["id"] for p in out_portfolios if p.get("id")]
+        if created_ids:
+            def _warm_after_commit():
+                for pid in created_ids:
+                    try:
+                        _start_portfolio_snapshot_refresh(pid, request.user.id, fresh_seconds=45)
+                    except Exception:
+                        pass
+                try:
+                    _start_dashboard_refresh(request.user.id, fresh_seconds=45)
+                except Exception:
+                    pass
+
+            db_transaction.on_commit(_warm_after_commit)
+
+        return Response(
+            {
+                "mode": "import",
+                "rows_received": len(rows),
+                "rows_resolved": len(resolved_rows),
+                "rows_processed": processed,
+                "rows_skipped": len(skipped),
+                "transactions_created": processed,
+                "grouped_by_sector": group_by_sector,
+                "created_portfolios": out_portfolios,
+                "import_log": import_log[:120],
+                "skipped_preview": skipped[:50],
+            },
+            status=status.HTTP_201_CREATED,
+        )
 
 
 class PortfoliosRetrieveDestroyView(APIView):

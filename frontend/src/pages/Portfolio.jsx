@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, clearTokens } from "../api.js";
-import LineChart from "../components/LineChart.jsx";
 import ScatterPlot from "../components/ScatterPlot.jsx";
 import Popover from "../components/Popover.jsx";
 import NavBar from "../components/NavBar.jsx";
@@ -43,6 +42,29 @@ function asText(v, fallback = "") {
     return fallback;
   }
   return fallback;
+}
+
+function ModuleLoader({ title = "Loading insights", hint = "Crunching data..." }) {
+  return (
+    <div className="moduleLoader" role="status" aria-live="polite">
+      <div className="moduleLoaderHead">
+        <div className="moduleLoaderOrb" />
+        <div>
+          <div className="strong">{title}</div>
+          <div className="muted small">{hint}</div>
+        </div>
+      </div>
+      <div className="moduleLoaderTrack">
+        <div className="moduleLoaderBar" />
+      </div>
+      <div className="moduleLoaderGrid">
+        <span />
+        <span />
+        <span />
+        <span />
+      </div>
+    </div>
+  );
 }
 
 function loadRecent() {
@@ -103,6 +125,7 @@ export default function Portfolio() {
   const [qty, setQty] = useState("1");
   const [price, setPrice] = useState("0");
   const [error, setError] = useState("");
+  const [tradeSuccess, setTradeSuccess] = useState("");
   const [quoteBusy, setQuoteBusy] = useState(false);
   const [activeBottomTab, setActiveBottomTab] = useState("transactions"); // transactions | pe | discount | forecast | cluster
   const [selectedHoldingSymbol, setSelectedHoldingSymbol] = useState("");
@@ -142,37 +165,57 @@ export default function Portfolio() {
 
     const portfolioPromise = api.getPortfolio(portfolioId, force);
     const transactionsPromise = api.listTransactions(portfolioId);
-    const metricsPromise = api
-      .portfolioPE(portfolioId, force)
-      .then((d) => d)
-      .catch((e) => {
-        if (isAuthErr(e)) throw e;
-        return null;
-      });
-
-    const [data, txs, metrics] = await Promise.all([portfolioPromise, transactionsPromise, metricsPromise]);
+    const [data, txs] = await Promise.all([portfolioPromise, transactionsPromise]);
     setPortfolio(data);
     setHoldings(data.holdings || []);
     setTransactions(txs || []);
-
-    const nextMetrics = {};
-    const items = metrics?.holdings || [];
-    for (const item of items) {
-      if (item?.symbol) nextMetrics[String(item.symbol)] = item;
-    }
-    setHoldingMetricsBySymbol(nextMetrics);
     writePortfolioCache(portfolioId, {
       portfolio: data,
       holdings: data.holdings || [],
       transactions: txs || [],
-      holdingMetricsBySymbol: nextMetrics
+      holdingMetricsBySymbol
     });
 
-    if (!force && (data?.meta?.stale || metrics?.meta?.stale)) {
+    if (!force && data?.meta?.stale) {
       window.setTimeout(() => {
         refresh(true).catch(() => {});
       }, 0);
     }
+
+    api
+      .portfolioPE(portfolioId, force)
+      .then((metrics) => {
+        const nextMetrics = {};
+        const items = metrics?.holdings || [];
+        for (const item of items) {
+          if (item?.symbol) nextMetrics[String(item.symbol)] = item;
+        }
+        setHoldingMetricsBySymbol(nextMetrics);
+        writePortfolioCache(portfolioId, {
+          portfolio: data,
+          holdings: data.holdings || [],
+          transactions: txs || [],
+          holdingMetricsBySymbol: nextMetrics
+        });
+        if (!force && metrics?.meta?.stale) {
+          window.setTimeout(() => {
+            api.portfolioPE(portfolioId, true).then((fresh) => {
+              const fm = {};
+              const fItems = fresh?.holdings || [];
+              for (const it of fItems) {
+                if (it?.symbol) fm[String(it.symbol)] = it;
+              }
+              setHoldingMetricsBySymbol(fm);
+            }).catch(() => {});
+          }, 0);
+        }
+      })
+      .catch((e) => {
+        if (isAuthErr(e)) {
+          clearTokens();
+          nav("/");
+        }
+      });
   }
 
   useEffect(() => {
@@ -310,6 +353,12 @@ export default function Portfolio() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [selectedHoldingSymbol]);
 
+  useEffect(() => {
+    if (!tradeSuccess) return;
+    const t = setTimeout(() => setTradeSuccess(""), 2200);
+    return () => clearTimeout(t);
+  }, [tradeSuccess]);
+
   async function placeTrade() {
     setError("");
     try {
@@ -325,6 +374,7 @@ export default function Portfolio() {
         qty,
         price
       });
+      setTradeSuccess(`Trade added: ${selectedSymbol}`);
       saveRecent(selectedSymbol);
       setRecentSymbols(loadRecent());
       await refresh(true);
@@ -501,52 +551,54 @@ export default function Portfolio() {
               <div className="right" data-label="U.PnL">U.PnL</div>
               <div className="right" data-label="Action">Action</div>
             </div>
-            {holdings.map((h) => {
-              const symbol = h.stock?.symbol ? String(h.stock.symbol) : "";
-              const metrics = symbol ? holdingMetricsBySymbol[symbol] : null;
-              const avgNum = toNum(h.avg_buy_price);
-              const low52 = toNum(metrics?.low_52w);
-              const high52 = toNum(metrics?.high_52w);
-              const pe = toNum(metrics?.pe);
-              const discountPct = toNum(metrics?.discount_from_52w_high_pct);
-              const sectorLabel = h.stock?.sector?.name || "--";
-              const exLabel = h.stock?.exchange ? ` (${h.stock.exchange})` : "";
-              return (
-              <div
-                className="row holdingsRow"
-                key={h.id}
-                style={{ cursor: "pointer" }}
-                onClick={() => openStockDetail(h.stock?.symbol)}
-                title="Click to view stock detail"
-              >
-                <div className="mono" data-label="Symbol">{h.stock?.symbol}</div>
-                <div data-label="Stock">
-                  <div>{h.stock?.name}</div>
-                  <div className="muted small">
-                    {sectorLabel}
-                    {exLabel}
+            <div className="holdingsRowsViewport">
+              {holdings.map((h) => {
+                const symbol = h.stock?.symbol ? String(h.stock.symbol) : "";
+                const metrics = symbol ? holdingMetricsBySymbol[symbol] : null;
+                const avgNum = toNum(h.avg_buy_price);
+                const low52 = toNum(metrics?.low_52w);
+                const high52 = toNum(metrics?.high_52w);
+                const pe = toNum(metrics?.pe);
+                const discountPct = toNum(metrics?.discount_from_52w_high_pct);
+                const sectorLabel = h.stock?.sector?.name || "--";
+                const exLabel = h.stock?.exchange ? ` (${h.stock.exchange})` : "";
+                return (
+                <div
+                  className="row holdingsRow"
+                  key={h.id}
+                  style={{ cursor: "pointer" }}
+                  onClick={() => openStockDetail(h.stock?.symbol)}
+                  title="Click to view stock detail"
+                >
+                  <div className="mono" data-label="Symbol">{h.stock?.symbol}</div>
+                  <div data-label="Stock">
+                    <div>{h.stock?.name}</div>
+                    <div className="muted small">
+                      {sectorLabel}
+                      {exLabel}
+                    </div>
+                  </div>
+                  <div className="right" data-label="Qty">{h.qty}</div>
+                  <div className="right" data-label="Avg">{avgNum === null ? "--" : fmt(avgNum)}</div>
+                  <div className="right" data-label="Last">
+                    <div>{fmt(h.last_price)}</div>
+                  </div>
+                  <div className="right" data-label="Min (365d)">{low52 === null ? "--" : fmt(low52)}</div>
+                  <div className="right" data-label="Max (365d)">{high52 === null ? "--" : fmt(high52)}</div>
+                  <div className="right" data-label="P/E">{pe === null ? "--" : fmt(pe)}</div>
+                  <div className="right" data-label="Discount">{discountPct === null ? "--" : `${fmt(discountPct)}%`}</div>
+                  <div className={toNum(h.unrealized_pnl) >= 0 ? "right pos" : "right neg"} data-label="U.PnL">
+                    {h.unrealized_pnl === null ? "--" : fmt(h.unrealized_pnl)}
+                  </div>
+                  <div className="right" data-label="Action" onClick={(e) => e.stopPropagation()}>
+                    <button className="btn danger sm" onClick={() => removeHolding(h.id)} title="Delete holding row">
+                      Delete
+                    </button>
                   </div>
                 </div>
-                <div className="right" data-label="Qty">{h.qty}</div>
-                <div className="right" data-label="Avg">{avgNum === null ? "--" : fmt(avgNum)}</div>
-                <div className="right" data-label="Last">
-                  <div>{fmt(h.last_price)}</div>
-                </div>
-                <div className="right" data-label="Min (365d)">{low52 === null ? "--" : fmt(low52)}</div>
-                <div className="right" data-label="Max (365d)">{high52 === null ? "--" : fmt(high52)}</div>
-                <div className="right" data-label="P/E">{pe === null ? "--" : fmt(pe)}</div>
-                <div className="right" data-label="Discount">{discountPct === null ? "--" : `${fmt(discountPct)}%`}</div>
-                <div className={toNum(h.unrealized_pnl) >= 0 ? "right pos" : "right neg"} data-label="U.PnL">
-                  {h.unrealized_pnl === null ? "--" : fmt(h.unrealized_pnl)}
-                </div>
-                <div className="right" data-label="Action" onClick={(e) => e.stopPropagation()}>
-                  <button className="btn danger sm" onClick={() => removeHolding(h.id)} title="Delete holding row">
-                    Delete
-                  </button>
-                </div>
-              </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
 
           <div className="mobileHoldingsList">
@@ -690,49 +742,53 @@ export default function Portfolio() {
             </div>
           </div>
 
-          {activeBottomTab === "transactions" ? (
-            <>
-              {transactions.length === 0 ? <div className="muted">No transactions yet.</div> : null}
-              <div className="table">
-                <div className="row head" style={{ gridTemplateColumns: "1.2fr 1fr 0.8fr 0.9fr 1fr" }}>
-                  <div data-label="Symbol">Symbol</div>
-                  <div data-label="Side">Side</div>
-                  <div className="right" data-label="Qty">Qty</div>
-                  <div className="right" data-label="Price">Price</div>
-                  <div className="right" data-label="Realized">Realized</div>
-                </div>
-                {transactions.map((t) => (
-                  <div className="row" key={t.id} style={{ gridTemplateColumns: "1.2fr 1fr 0.8fr 0.9fr 1fr" }}>
-                    <div className="mono" data-label="Symbol">{t.stock?.symbol}</div>
-                    <div className={t.side === "BUY" ? "pos" : "neg"} data-label="Side">{t.side}</div>
-                    <div className="right" data-label="Qty">{t.qty}</div>
-                    <div className="right" data-label="Price">{fmt(t.price)}</div>
-                    <div className={toNum(t.realized_pnl) >= 0 ? "right pos" : "right neg"} data-label="Realized">{fmt(t.realized_pnl)}</div>
+          <div key={activeBottomTab} className="tabPaneTransition">
+            {activeBottomTab === "transactions" ? (
+              <>
+                {transactions.length === 0 ? <div className="muted">No transactions yet.</div> : null}
+                <div className="table">
+                  <div className="row head" style={{ gridTemplateColumns: "1.2fr 1fr 0.8fr 0.9fr 1fr" }}>
+                    <div data-label="Symbol">Symbol</div>
+                    <div data-label="Side">Side</div>
+                    <div className="right" data-label="Qty">Qty</div>
+                    <div className="right" data-label="Price">Price</div>
+                    <div className="right" data-label="Realized">Realized</div>
                   </div>
-                ))}
-              </div>
-            </>
-          ) : activeBottomTab === "pe" ? (
-            <PortfolioPEChart portfolioId={portfolioId} />
-          ) : activeBottomTab === "discount" ? (
-            <PortfolioDiscountChart portfolioId={portfolioId} />
-          ) : activeBottomTab === "forecast" ? (
-            <PortfolioForecastChart portfolioId={portfolioId} />
-          ) : (
-            <PortfolioClusterPanel
-              clusterData={clusterData}
-              busy={clusterBusy}
-              error={clusterError}
-              k={clusterK}
-              setK={setClusterK}
-              onOpenConfig={() => {
-                setClusterOpen(true);
-                ensurePortfoliosLoaded();
-              }}
-              onDownloadCsv={downloadClusterCsv}
-              selectAnchorRef={clusterSelectAnchorRef}
-            />
-          )}
+                  <div className="transactionsRowsViewport">
+                    {transactions.map((t) => (
+                      <div className="row" key={t.id} style={{ gridTemplateColumns: "1.2fr 1fr 0.8fr 0.9fr 1fr" }}>
+                        <div className="mono" data-label="Symbol">{t.stock?.symbol}</div>
+                        <div className={t.side === "BUY" ? "pos" : "neg"} data-label="Side">{t.side}</div>
+                        <div className="right" data-label="Qty">{t.qty}</div>
+                        <div className="right" data-label="Price">{fmt(t.price)}</div>
+                        <div className={toNum(t.realized_pnl) >= 0 ? "right pos" : "right neg"} data-label="Realized">{fmt(t.realized_pnl)}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </>
+            ) : activeBottomTab === "pe" ? (
+              <PortfolioPEChart portfolioId={portfolioId} />
+            ) : activeBottomTab === "discount" ? (
+              <PortfolioDiscountChart portfolioId={portfolioId} />
+            ) : activeBottomTab === "forecast" ? (
+              <PortfolioForecastChart portfolioId={portfolioId} />
+            ) : (
+              <PortfolioClusterPanel
+                clusterData={clusterData}
+                busy={clusterBusy}
+                error={clusterError}
+                k={clusterK}
+                setK={setClusterK}
+                onOpenConfig={() => {
+                  setClusterOpen(true);
+                  ensurePortfoliosLoaded();
+                }}
+                onDownloadCsv={downloadClusterCsv}
+                selectAnchorRef={clusterSelectAnchorRef}
+              />
+            )}
+          </div>
         </section>
       </main>
 
@@ -817,7 +873,7 @@ export default function Portfolio() {
             <div className="modalHeader">
               <div>
                 <div className="strong">Add trade</div>
-                <div className="muted small">Buy/Sell from any stock (NSE/BSE via yfinance)</div>
+                <div className="muted small">Buy/Sell from Indian and US stocks (NSE/BSE/NASDAQ/NYSE via yfinance)</div>
               </div>
               <button className="btn ghost sm" type="button" onClick={() => setTradeOpen(false)} aria-label="Close">
                 Close
@@ -837,7 +893,7 @@ export default function Portfolio() {
                     const v = e.target.value;
                     setQ(v);
                     const maybe = v.trim().toUpperCase();
-                    if ((maybe.endsWith(".NS") || maybe.endsWith(".BO")) && maybe.length >= 5) {
+                    if (maybe.length >= 1 && /^[A-Z][A-Z0-9.\-]{0,9}$/.test(maybe)) {
                       setSelectedSymbol(maybe);
                       setSelectedName("");
                     }
@@ -860,7 +916,7 @@ export default function Portfolio() {
                       setQ(`${picked.symbol}`);
                     }
                   }}
-                  placeholder="Type: INFY, Reliance, TCS.NS"
+                  placeholder="Type: INFY, TCS.NS, AAPL, MSFT"
                 />
                 {q ? (
                   <button
@@ -1115,6 +1171,15 @@ export default function Portfolio() {
         </div>
       ) : null}
 
+      {tradeSuccess ? (
+        <div className="successToast" role="status" aria-live="polite">
+          <span className="successToastCheck" aria-hidden="true">
+            ✓
+          </span>
+          <span>{tradeSuccess}</span>
+        </div>
+      ) : null}
+
       <Popover
         open={clusterOpen}
         anchorRef={clusterSelectAnchorRef?.current ? clusterSelectAnchorRef : clusterAnchorRef}
@@ -1297,6 +1362,89 @@ function PortfolioClusterPanel({
     if (k2 === "discount" || k2 === "position") return "%";
     return "";
   };
+  const [activeClusterId, setActiveClusterId] = useState(null);
+  const activeClusterAnchorRef = useRef(null);
+
+  const clusterInsights = useMemo(() => {
+    const safeNum = (v) => (Number.isFinite(Number(v)) ? Number(v) : null);
+    const decorated = clusters.map((c) => {
+      const pe = safeNum(c.avg_pe);
+      const disc = safeNum(c.avg_discount_pct);
+      const pos = safeNum(c.avg_position_pct);
+      const size = Number(c.size || 0);
+      const clusterPct = total ? (size / total) * 100 : 0;
+
+      const opportunityScore =
+        (disc === null ? 0 : Math.max(0, Math.min(40, disc)) * 1.5) +
+        (pe === null ? 6 : Math.max(0, 35 - pe) * 1.15) +
+        (pos === null ? 5 : Math.max(0, 70 - pos) * 0.5) +
+        Math.max(0, 16 - clusterPct * 0.35);
+
+      let profile = "Balanced Core";
+      let tone = "neutral";
+      let action = "Hold core names, add selectively on pullbacks.";
+
+      if ((disc !== null && disc >= 18) && (pe !== null && pe <= 30)) {
+        profile = "Opportunity Basket";
+        tone = "pos";
+        action = "Stagger accumulation with position limits.";
+      } else if ((pe !== null && pe > 58) || ((pos !== null && pos > 84) && (disc !== null && disc < 8))) {
+        profile = "Overheated Risk";
+        tone = "neg";
+        action = "Trim exposure, tighten stop-loss / hedge.";
+      } else if ((disc !== null && disc < 6) && (pe !== null && pe > 40)) {
+        profile = "FOMO Risk";
+        tone = "neg";
+        action = "Avoid chasing; wait for better risk/reward.";
+      }
+
+      return {
+        ...c,
+        avg_pe: pe,
+        avg_discount_pct: disc,
+        avg_position_pct: pos,
+        clusterPct,
+        opportunityScore: Math.round(opportunityScore),
+        profile,
+        tone,
+        action
+      };
+    });
+
+    const rankedByOpportunity = [...decorated].sort((a, b) => (b.opportunityScore || 0) - (a.opportunityScore || 0));
+    const rankedByRisk = [...decorated].sort((a, b) => {
+      const aRisk = (a.avg_pe || 0) + (a.avg_position_pct || 0) - (a.avg_discount_pct || 0);
+      const bRisk = (b.avg_pe || 0) + (b.avg_position_pct || 0) - (b.avg_discount_pct || 0);
+      return bRisk - aRisk;
+    });
+
+    const concentration = decorated.length ? Math.max(...decorated.map((c) => c.clusterPct || 0)) : 0;
+    const peVals = decorated.map((c) => c.avg_pe).filter((v) => v !== null);
+    const peMean = peVals.length ? peVals.reduce((a, b) => a + b, 0) / peVals.length : 0;
+    const peDispersion = peVals.length
+      ? Math.sqrt(peVals.reduce((acc, v) => acc + ((v - peMean) ** 2), 0) / peVals.length)
+      : 0;
+
+    return {
+      decorated,
+      bestCluster: rankedByOpportunity[0] || null,
+      riskyCluster: rankedByRisk[0] || null,
+      concentration,
+      peDispersion
+    };
+  }, [clusters, total]);
+  const activeCluster = useMemo(() => {
+    if (activeClusterId === null || activeClusterId === undefined) return null;
+    return clusterInsights.decorated.find((c) => String(c.id) === String(activeClusterId)) || null;
+  }, [clusterInsights, activeClusterId]);
+  useEffect(() => {
+    if (!activeCluster) return;
+    const onKeyDown = (e) => {
+      if (e.key === "Escape") setActiveClusterId(null);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [activeCluster]);
 
   return (
     <div>
@@ -1340,34 +1488,107 @@ function PortfolioClusterPanel({
       </div>
 
       {error ? <div className="error">{error}</div> : null}
-      {busy ? <div className="skeleton h200" style={{ marginTop: 10 }} /> : null}
+      {busy ? <ModuleLoader title="Building cluster map" hint="Grouping stocks by valuation and positioning..." /> : null}
 
       {clusters.length ? (
-        <div className="card" style={{ marginTop: 12, background: "rgba(255,255,255,0.04)" }}>
-          <div className="strong">Cluster sizes</div>
-          <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
-            {clusters.map((c) => {
-              const pct = total ? Math.round(((c.size || 0) / total) * 100) : 0;
-              return (
-                <div key={c.id} style={{ display: "grid", gridTemplateColumns: "120px 1fr 70px", gap: 10, alignItems: "center" }}>
-                  <div className="mono strong">Cluster {c.id}</div>
-                  <div style={{ height: 10, borderRadius: 999, background: "rgba(255,255,255,0.08)", overflow: "hidden" }}>
-                    <div
-                      style={{
-                        width: `${pct}%`,
-                        height: "100%",
-                        background: "linear-gradient(90deg, color-mix(in srgb, var(--accent1) 65%, transparent), color-mix(in srgb, var(--accent2) 45%, transparent))"
-                      }}
-                    />
-                  </div>
-                  <div className="muted small right">
-                    {c.size} ({pct}%)
-                  </div>
-                </div>
-              );
-            })}
+        <>
+          <div className="clusterInsightGrid">
+            <div className="clusterDecisionCard cardA">
+              <div className="kpiLabel">Best Opportunity</div>
+              <div className="kpiValue">{clusterInsights.bestCluster ? `Cluster ${clusterInsights.bestCluster.id}` : "--"}</div>
+              <div className="muted small">
+                {clusterInsights.bestCluster ? `${clusterInsights.bestCluster.profile} • Score ${clusterInsights.bestCluster.opportunityScore}` : ""}
+              </div>
+            </div>
+            <div className="clusterDecisionCard cardB">
+              <div className="kpiLabel">Highest Risk</div>
+              <div className="kpiValue neg">{clusterInsights.riskyCluster ? `Cluster ${clusterInsights.riskyCluster.id}` : "--"}</div>
+              <div className="muted small">{clusterInsights.riskyCluster?.profile || ""}</div>
+            </div>
+            <div className="clusterDecisionCard cardC">
+              <div className="kpiLabel">Concentration Risk</div>
+              <div className={`kpiValue ${clusterInsights.concentration > 52 ? "neg" : "neutral"}`}>
+                {fmt(round2(clusterInsights.concentration))}%
+              </div>
+              <div className="muted small">Largest cluster share</div>
+            </div>
+            <div className="clusterDecisionCard cardD">
+              <div className="kpiLabel">P/E Dispersion</div>
+              <div className={`kpiValue ${clusterInsights.peDispersion > 16 ? "neg" : "pos"}`}>{fmt(round2(clusterInsights.peDispersion))}</div>
+              <div className="muted small">Cross-cluster valuation spread</div>
+            </div>
           </div>
-        </div>
+
+          <div className="card" style={{ marginTop: 12, background: "rgba(255,255,255,0.04)" }}>
+            <div className="strong">Cluster sizes</div>
+            <div className="clusterSizeList">
+              {clusterInsights.decorated.map((c) => {
+                const pct = total ? Math.round(((c.size || 0) / total) * 100) : 0;
+                const toneClass = c.tone === "pos" ? "pos" : c.tone === "neg" ? "neg" : "neutral";
+                return (
+                  <div key={c.id} className="clusterSizeRow">
+                    <div className="mono strong">Cluster {c.id}</div>
+                    <div className="clusterSizeBar">
+                      <div
+                        className={`clusterSizeFill ${toneClass}`}
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                    <div className="muted small right">
+                      {c.size} ({pct}%)
+                    </div>
+                    <div className={`clusterTag ${toneClass}`}>{c.profile}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="clusterPlaybook" style={{ marginTop: 12 }}>
+            {clusterInsights.decorated.map((c) => (
+              <div
+                key={`playbook-${c.id}`}
+                className="clusterPlayCard"
+                role="button"
+                tabIndex={0}
+                onClick={(e) => {
+                  activeClusterAnchorRef.current = e.currentTarget;
+                  setActiveClusterId(c.id);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    activeClusterAnchorRef.current = e.currentTarget;
+                    setActiveClusterId(c.id);
+                  }
+                }}
+              >
+                <div className="sectionRow">
+                  <div className="strong">Cluster {c.id}</div>
+                  <div className={`clusterTag ${c.tone}`}>{c.profile}</div>
+                </div>
+                <div className="muted small" style={{ marginTop: 6 }}>
+                  Avg P/E {fmt(c.avg_pe)} | Avg Discount {fmt(c.avg_discount_pct)}% | Avg 52W Position {fmt(c.avg_position_pct)}%
+                </div>
+                <div className="clusterAction">{c.action}</div>
+                <div className="clusterPlayActions">
+                  <div className="muted small">Tap to view stock list</div>
+                  <button
+                    type="button"
+                    className="btn ghost sm"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      activeClusterAnchorRef.current = e.currentTarget.closest(".clusterPlayCard");
+                      setActiveClusterId(c.id);
+                    }}
+                  >
+                    View stocks
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
       ) : null}
 
       {clusters.length ? (
@@ -1395,8 +1616,7 @@ function PortfolioClusterPanel({
         <div className="card" style={{ marginTop: 12, background: "rgba(255,255,255,0.04)" }}>
           <div className="strong">4D view (pairwise projections)</div>
           <div className="muted small" style={{ marginTop: 6 }}>
-            Clustering uses 4 features (log Last, P/E, Discount, 52W Position). A single 2D chart can hide separation, so this matrix shows multiple
-            projections. Dot size represents market value (bigger = larger holding value).
+            Clustering uses 4 features (log Last, P/E, Discount, 52W Position). Dot size represents market value (bigger = larger holding value).
           </div>
 
           <div className="twoCol" style={{ marginTop: 12 }}>
@@ -1470,39 +1690,60 @@ function PortfolioClusterPanel({
         </div>
       ) : null}
 
-      {clusters.map((c) => (
-        <div key={c.id} className="card" style={{ marginTop: 12 }}>
-          <div className="sectionRow">
-            <div className="strong">Cluster {c.id}</div>
-            <div className="muted small">
-              Avg P/E: {fmt(c.avg_pe)} | Avg Disc: {fmt(c.avg_discount_pct)}% | Avg Pos: {fmt(c.avg_position_pct)}%
-            </div>
-          </div>
-
-          <div className="table" style={{ marginTop: 10 }}>
-            <div className="row head" style={{ gridTemplateColumns: "1.2fr 1.1fr 0.9fr 0.7fr 0.8fr 0.9fr" }}>
-              <div>Symbol</div>
-              <div>Sector</div>
-              <div>Portfolio</div>
-              <div className="right">Last</div>
-              <div className="right">P/E</div>
-              <div className="right">Disc</div>
-            </div>
-            {(c.items || []).map((it) => (
-              <div key={`${c.id}:${it.portfolio_id}:${it.symbol}`} className="row" style={{ gridTemplateColumns: "1.2fr 1.1fr 0.9fr 0.7fr 0.8fr 0.9fr" }}>
-                <div className="mono strong">{it.symbol}</div>
-                <div className="muted">{it.sector || "--"}</div>
-                <div className="muted small">{it.portfolio_name || `#${it.portfolio_id}`}</div>
-                <div className="right">{fmt(it.last_price)}</div>
-                <div className="right">{fmt(it.pe)}</div>
-                <div className="right">{fmt(it.discount_from_52w_high_pct)}%</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      ))}
-
       {!busy && !clusters.length && !error ? <div className="muted" style={{ marginTop: 10 }}>No cluster data yet.</div> : null}
+
+      <Popover
+        open={Boolean(activeCluster)}
+        anchorRef={activeClusterAnchorRef}
+        onClose={() => setActiveClusterId(null)}
+        title={activeCluster ? `Cluster ${activeCluster.id} stocks` : "Cluster stocks"}
+        ariaLabel="Cluster stocks"
+        width={980}
+        draggable={false}
+        tapToMove={false}
+        followPointer={false}
+      >
+        {activeCluster ? (
+          <div className="clusterPopoverBody">
+            <div className="clusterPopoverMetrics">
+              <div className="clusterMetricChip">
+                <span className="clusterMetricLabel">Stocks</span>
+                <span className="clusterMetricValue">{activeCluster.items?.length || 0}</span>
+              </div>
+              <div className="clusterMetricChip">
+                <span className="clusterMetricLabel">Avg P/E</span>
+                <span className="clusterMetricValue">{fmt(activeCluster.avg_pe)}</span>
+              </div>
+              <div className="clusterMetricChip">
+                <span className="clusterMetricLabel">Avg Disc</span>
+                <span className="clusterMetricValue">{fmt(activeCluster.avg_discount_pct)}%</span>
+              </div>
+              <div className="clusterMetricChip">
+                <span className="clusterMetricLabel">Avg Pos</span>
+                <span className="clusterMetricValue">{fmt(activeCluster.avg_position_pct)}%</span>
+              </div>
+            </div>
+            <div className="table">
+              <div className="row head clusterModalGrid">
+                <div>Symbol</div>
+                <div>Sector</div>
+                <div className="right">P/E</div>
+                <div className="right">Disc</div>
+              </div>
+              <div className="clusterRowsViewport">
+                {(activeCluster.items || []).map((it) => (
+                  <div key={`${activeCluster.id}:${it.portfolio_id}:${it.symbol}`} className="row clusterModalGrid">
+                    <div className="mono strong" data-label="Symbol">{it.symbol}</div>
+                    <div className="muted" data-label="Sector">{it.sector || "--"}</div>
+                    <div className="right" data-label="P/E">{fmt(it.pe)}</div>
+                    <div className="right" data-label="Disc">{fmt(it.discount_from_52w_high_pct)}%</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </Popover>
     </div>
   );
 }
@@ -1512,6 +1753,8 @@ function PortfolioPEChart({ portfolioId }) {
   const [data, setData] = useState(null);
   const [busy, setBusy] = useState(true);
   const [err, setErr] = useState("");
+  const [search, setSearch] = useState("");
+  const [sortBy, setSortBy] = useState("opportunity");
 
   useEffect(() => {
     let alive = true;
@@ -1540,53 +1783,159 @@ function PortfolioPEChart({ portfolioId }) {
     };
   }, [portfolioId, nav]);
 
-  const points = useMemo(() => {
+  const rows = useMemo(() => {
     const holdings = data?.holdings || [];
     return holdings
       .map((h) => ({
-        symbol: h.symbol,
-        name: h.name,
-        pe: h.pe === null || h.pe === undefined ? null : Number(h.pe)
+        symbol: String(h.symbol || ""),
+        name: String(h.name || ""),
+        pe: h.pe === null || h.pe === undefined ? null : Number(h.pe),
+        weight: h.weight === null || h.weight === undefined ? null : Number(h.weight),
+        discount: h.discount_from_52w_high_pct === null || h.discount_from_52w_high_pct === undefined
+          ? null
+          : Number(h.discount_from_52w_high_pct),
       }))
-      .filter((p) => p.pe !== null && Number.isFinite(p.pe));
+      .filter((p) => p.pe !== null && Number.isFinite(p.pe))
+      .map((p) => {
+        let band = "Unknown";
+        let suggestion = "Review";
+        let bandClass = "neutral";
+        if (p.pe <= 15) {
+          band = "Value";
+          suggestion = "Accumulation Candidate";
+          bandClass = "pos";
+        } else if (p.pe <= 30) {
+          band = "Fair";
+          suggestion = "Hold / Add on Dips";
+          bandClass = "neutral";
+        } else if (p.pe <= 60) {
+          band = "Growth";
+          suggestion = "Hold with Risk Control";
+          bandClass = "neutral";
+        } else {
+          band = "High";
+          suggestion = "High Valuation Risk";
+          bandClass = "neg";
+        }
+        const discountPart = Number.isFinite(p.discount) ? Math.max(0, Math.min(40, p.discount)) : 0;
+        const pePart = Math.max(0, Math.min(40, 40 - Math.max(0, p.pe - 10)));
+        const weightPart = Number.isFinite(p.weight) ? Math.max(0, 20 - Math.min(20, p.weight * 100)) : 10;
+        const opportunityScore = Math.round(discountPart + pePart + weightPart);
+        return { ...p, band, suggestion, bandClass, opportunityScore };
+      });
   }, [data]);
 
-  const maxPE = useMemo(() => (points.length ? Math.max(...points.map((p) => p.pe)) : 0), [points]);
+  const filteredRows = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const base = q
+      ? rows.filter((r) => r.symbol.toLowerCase().includes(q) || r.name.toLowerCase().includes(q))
+      : rows;
+    const copy = [...base];
+    copy.sort((a, b) => {
+      if (sortBy === "pe") return (a.pe || 0) - (b.pe || 0);
+      if (sortBy === "weight") return (b.weight || 0) - (a.weight || 0);
+      return (b.opportunityScore || 0) - (a.opportunityScore || 0);
+    });
+    return copy;
+  }, [rows, search, sortBy]);
+
+  const summary = useMemo(() => {
+    const total = rows.length;
+    const highRisk = rows.filter((r) => r.pe > 60).length;
+    const valueCount = rows.filter((r) => r.pe <= 15).length;
+    const top = [...rows].sort((a, b) => (b.opportunityScore || 0) - (a.opportunityScore || 0))[0] || null;
+    return { total, highRisk, valueCount, top };
+  }, [rows]);
 
   return (
-    <div style={{ marginTop: 10 }}>
-      {busy ? <div className="skeleton h200" /> : null}
+    <div className="transactionsChartBody" style={{ marginTop: 10 }}>
+      {busy ? <ModuleLoader title="Analyzing P/E structure" hint="Scoring valuation bands and opportunities..." /> : null}
       {err ? <div className="error">{err}</div> : null}
-      {!busy && points.length === 0 ? <div className="muted">No P/E values available for holdings yet.</div> : null}
+      {!busy && rows.length === 0 ? <div className="muted">No P/E values available for holdings yet.</div> : null}
 
-      <div className="vbarWrap">
-        <div className="vbarGrid">
-          {points.map((p) => {
-            const hPct = maxPE ? Math.max(2, Math.min(100, (p.pe / maxPE) * 100)) : 2;
-            return (
-              <div className="vbarCol" key={p.symbol} title={`${p.symbol} • PE ${fmt(p.pe)}`}>
-                <div className="vbarTrack">
-                  <div className="vbarFill" style={{ height: `${hPct}%` }} />
-                </div>
-                <div className="vbarLabel mono">{p.symbol}</div>
-                <div className="vbarValue mono">{fmt(p.pe)}</div>
-              </div>
-            );
-          })}
+      {rows.length ? (
+        <div className="peInsightGrid">
+          <div className="peDecisionCard">
+            <div className="kpiLabel">Stocks with P/E</div>
+            <div className="kpiValue">{summary.total}</div>
+          </div>
+          <div className="peDecisionCard">
+            <div className="kpiLabel">Value Zone (P/E &lt;= 15)</div>
+            <div className="kpiValue pos">{summary.valueCount}</div>
+          </div>
+          <div className="peDecisionCard">
+            <div className="kpiLabel">High Risk (P/E &gt; 60)</div>
+            <div className="kpiValue neg">{summary.highRisk}</div>
+          </div>
+          <div className="peDecisionCard">
+            <div className="kpiLabel">Top Opportunity</div>
+            <div className="kpiValue">{summary.top?.symbol || "--"}</div>
+            <div className="muted small">{summary.top ? `Score ${summary.top.opportunityScore}` : ""}</div>
+          </div>
         </div>
-      </div>
+      ) : null}
+
+      {rows.length ? (
+        <>
+          <div className="twoCol" style={{ marginTop: 10 }}>
+            <label className="label" style={{ marginTop: 0 }}>
+              Search
+              <input className="input" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Symbol or name" />
+            </label>
+            <label className="label" style={{ marginTop: 0 }}>
+              Sort by
+              <select className="input" value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+                <option value="opportunity">Opportunity Score</option>
+                <option value="pe">Lowest P/E first</option>
+                <option value="weight">Highest weight first</option>
+              </select>
+            </label>
+          </div>
+
+          <div className="peTableWrap">
+            <div className="table">
+              <div className="row head" style={{ gridTemplateColumns: "1fr 1.4fr 0.7fr 0.8fr 0.9fr 1fr 1fr 0.9fr" }}>
+                <div>Symbol</div>
+                <div>Name</div>
+                <div className="right">P/E</div>
+                <div className="right">Weight</div>
+                <div className="right">Discount</div>
+                <div>Band</div>
+                <div>Suggestion</div>
+                <div className="right">Score</div>
+              </div>
+              <div className="peRowsViewport">
+                {filteredRows.map((r) => (
+                  <div className="row" key={r.symbol} style={{ gridTemplateColumns: "1fr 1.4fr 0.7fr 0.8fr 0.9fr 1fr 1fr 0.9fr" }}>
+                    <div className="mono">{r.symbol}</div>
+                    <div title={r.name}>{r.name}</div>
+                    <div className="right">{fmt(r.pe)}</div>
+                    <div className="right">{r.weight === null ? "--" : `${fmt((r.weight || 0) * 100)}%`}</div>
+                    <div className="right">{r.discount === null ? "--" : `${fmt(r.discount)}%`}</div>
+                    <div className={r.bandClass}>{r.band}</div>
+                    <div className="muted small">{r.suggestion}</div>
+                    <div className="right strong">{r.opportunityScore}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </>
+      ) : null}
       <div className="muted small" style={{ marginTop: 10 }}>
-        Vertical bar chart of P/E by holding. P/E is fetched from yfinance fundamentals (best-effort).
+        Decision guide: lower P/E with healthy discount can indicate better entry zones; very high P/E needs stricter risk control.
       </div>
     </div>
   );
 }
 
-function PortfolioDiscountChart({ portfolioId }) {
+function PortfolioDiscountChartLegacy({ portfolioId }) {
   const nav = useNavigate();
   const [data, setData] = useState(null);
   const [busy, setBusy] = useState(true);
   const [err, setErr] = useState("");
+  const [search, setSearch] = useState("");
+  const [sortBy, setSortBy] = useState("opportunity");
 
   useEffect(() => {
     let alive = true;
@@ -1615,20 +1964,72 @@ function PortfolioDiscountChart({ portfolioId }) {
     };
   }, [portfolioId, nav]);
 
-  const points = useMemo(() => {
+  const rows = useMemo(() => {
     const holdings = data?.holdings || [];
     return holdings
       .map((h) => ({
-        symbol: h.symbol,
-        discount: h.discount_from_52w_high_pct === null || h.discount_from_52w_high_pct === undefined ? null : Number(h.discount_from_52w_high_pct)
+        symbol: String(h.symbol || ""),
+        name: String(h.name || ""),
+        discount: h.discount_from_52w_high_pct === null || h.discount_from_52w_high_pct === undefined
+          ? null
+          : Number(h.discount_from_52w_high_pct),
+        pe: h.pe === null || h.pe === undefined ? null : Number(h.pe),
+        weight: h.weight === null || h.weight === undefined ? null : Number(h.weight),
       }))
-      .filter((p) => p.discount !== null && Number.isFinite(p.discount));
+      .filter((p) => p.discount !== null && Number.isFinite(p.discount))
+      .map((p) => {
+        let zone = "Unknown";
+        let suggestion = "Review";
+        let zoneClass = "neutral";
+        if (p.discount >= 30) {
+          zone = "Deep Discount";
+          suggestion = "High upside if fundamentals hold";
+          zoneClass = "pos";
+        } else if (p.discount >= 15) {
+          zone = "Healthy Discount";
+          suggestion = "Good watchlist candidate";
+          zoneClass = "neutral";
+        } else if (p.discount >= 5) {
+          zone = "Near Fair";
+          suggestion = "Hold / staggered entry";
+          zoneClass = "neutral";
+        } else {
+          zone = "Near 52W High";
+          suggestion = "Momentum zone, manage risk";
+          zoneClass = "neg";
+        }
+        const discountPart = Math.max(0, Math.min(60, p.discount || 0));
+        const pePart = Number.isFinite(p.pe) ? Math.max(0, Math.min(25, 35 - (p.pe || 0) / 2)) : 12;
+        const weightPart = Number.isFinite(p.weight) ? Math.max(0, 15 - Math.min(15, (p.weight || 0) * 100)) : 8;
+        const opportunityScore = Math.round(discountPart + pePart + weightPart);
+        return { ...p, zone, suggestion, zoneClass, opportunityScore };
+      });
   }, [data]);
 
-  const maxD = useMemo(() => (points.length ? Math.max(...points.map((p) => p.discount)) : 0), [points]);
+  const filteredRows = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const base = q
+      ? rows.filter((r) => r.symbol.toLowerCase().includes(q) || r.name.toLowerCase().includes(q))
+      : rows;
+    const copy = [...base];
+    copy.sort((a, b) => {
+      if (sortBy === "discount") return (b.discount || 0) - (a.discount || 0);
+      if (sortBy === "pe") return (a.pe || 0) - (b.pe || 0);
+      return (b.opportunityScore || 0) - (a.opportunityScore || 0);
+    });
+    return copy;
+  }, [rows, search, sortBy]);
+
+  const summary = useMemo(() => {
+    const total = rows.length;
+    const deep = rows.filter((r) => (r.discount || 0) >= 30).length;
+    const nearHigh = rows.filter((r) => (r.discount || 0) < 5).length;
+    const top = [...rows].sort((a, b) => (b.opportunityScore || 0) - (a.opportunityScore || 0))[0] || null;
+    return { total, deep, nearHigh, top };
+  }, [rows]);
 
   return (
-    <div style={{ marginTop: 10 }}>
+    <div className="transactionsChartBody" style={{ marginTop: 10 }}>
       {busy ? <div className="skeleton h200" /> : null}
       {err ? <div className="error">{err}</div> : null}
       {!busy && points.length === 0 ? <div className="muted">No discount values yet (needs 52W high + last price).</div> : null}
@@ -1657,11 +2058,194 @@ function PortfolioDiscountChart({ portfolioId }) {
   );
 }
 
+function PortfolioDiscountChart({ portfolioId }) {
+  const nav = useNavigate();
+  const [data, setData] = useState(null);
+  const [busy, setBusy] = useState(true);
+  const [err, setErr] = useState("");
+  const [search, setSearch] = useState("");
+  const [sortBy, setSortBy] = useState("opportunity");
+
+  useEffect(() => {
+    let alive = true;
+    setBusy(true);
+    api
+      .portfolioPE(portfolioId)
+      .then((d) => {
+        if (!alive) return;
+        setData(d);
+        setErr("");
+      })
+      .catch((e) => {
+        if (!alive) return;
+        setErr(e.message || "Failed to load chart");
+        if ((e.message || "").includes("HTTP 401") || (e.message || "").includes("HTTP 403")) {
+          clearTokens();
+          nav("/");
+        }
+      })
+      .finally(() => {
+        if (!alive) return;
+        setBusy(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [portfolioId, nav]);
+
+  const rows = useMemo(() => {
+    const holdings = data?.holdings || [];
+    return holdings
+      .map((h) => ({
+        symbol: String(h.symbol || ""),
+        name: String(h.name || ""),
+        discount: h.discount_from_52w_high_pct === null || h.discount_from_52w_high_pct === undefined
+          ? null
+          : Number(h.discount_from_52w_high_pct),
+        pe: h.pe === null || h.pe === undefined ? null : Number(h.pe),
+        weight: h.weight === null || h.weight === undefined ? null : Number(h.weight),
+      }))
+      .filter((p) => p.discount !== null && Number.isFinite(p.discount))
+      .map((p) => {
+        let zone = "Unknown";
+        let suggestion = "Review";
+        let zoneClass = "neutral";
+        if (p.discount >= 30) {
+          zone = "Deep Discount";
+          suggestion = "High upside if fundamentals hold";
+          zoneClass = "pos";
+        } else if (p.discount >= 15) {
+          zone = "Healthy Discount";
+          suggestion = "Good watchlist candidate";
+          zoneClass = "neutral";
+        } else if (p.discount >= 5) {
+          zone = "Near Fair";
+          suggestion = "Hold / staggered entry";
+          zoneClass = "neutral";
+        } else {
+          zone = "Near 52W High";
+          suggestion = "Momentum zone, manage risk";
+          zoneClass = "neg";
+        }
+        const discountPart = Math.max(0, Math.min(60, p.discount || 0));
+        const pePart = Number.isFinite(p.pe) ? Math.max(0, Math.min(25, 35 - (p.pe || 0) / 2)) : 12;
+        const weightPart = Number.isFinite(p.weight) ? Math.max(0, 15 - Math.min(15, (p.weight || 0) * 100)) : 8;
+        const opportunityScore = Math.round(discountPart + pePart + weightPart);
+        return { ...p, zone, suggestion, zoneClass, opportunityScore };
+      });
+  }, [data]);
+
+  const filteredRows = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const base = q
+      ? rows.filter((r) => r.symbol.toLowerCase().includes(q) || r.name.toLowerCase().includes(q))
+      : rows;
+    const copy = [...base];
+    copy.sort((a, b) => {
+      if (sortBy === "discount") return (b.discount || 0) - (a.discount || 0);
+      if (sortBy === "pe") return (a.pe || 0) - (b.pe || 0);
+      return (b.opportunityScore || 0) - (a.opportunityScore || 0);
+    });
+    return copy;
+  }, [rows, search, sortBy]);
+
+  const summary = useMemo(() => {
+    const total = rows.length;
+    const deep = rows.filter((r) => (r.discount || 0) >= 30).length;
+    const nearHigh = rows.filter((r) => (r.discount || 0) < 5).length;
+    const top = [...rows].sort((a, b) => (b.opportunityScore || 0) - (a.opportunityScore || 0))[0] || null;
+    return { total, deep, nearHigh, top };
+  }, [rows]);
+
+  return (
+    <div className="transactionsChartBody" style={{ marginTop: 10 }}>
+      {busy ? <ModuleLoader title="Computing discount zones" hint="Evaluating 52W discount opportunities..." /> : null}
+      {err ? <div className="error">{err}</div> : null}
+      {!busy && rows.length === 0 ? <div className="muted">No discount values yet (needs 52W high + last price).</div> : null}
+
+      {rows.length ? (
+        <div className="discountInsightGrid">
+          <div className="discountDecisionCard cardA">
+            <div className="kpiLabel">Stocks with Discount</div>
+            <div className="kpiValue">{summary.total}</div>
+          </div>
+          <div className="discountDecisionCard cardB">
+            <div className="kpiLabel">Deep Discount (&gt;= 30%)</div>
+            <div className="kpiValue pos">{summary.deep}</div>
+          </div>
+          <div className="discountDecisionCard cardC">
+            <div className="kpiLabel">Near 52W High (&lt; 5%)</div>
+            <div className="kpiValue neg">{summary.nearHigh}</div>
+          </div>
+          <div className="discountDecisionCard cardD">
+            <div className="kpiLabel">Top Opportunity</div>
+            <div className="kpiValue">{summary.top?.symbol || "--"}</div>
+            <div className="muted small">{summary.top ? `Score ${summary.top.opportunityScore}` : ""}</div>
+          </div>
+        </div>
+      ) : null}
+
+      {rows.length ? (
+        <>
+          <div className="twoCol" style={{ marginTop: 10 }}>
+            <label className="label" style={{ marginTop: 0 }}>
+              Search
+              <input className="input" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Symbol or name" />
+            </label>
+            <label className="label" style={{ marginTop: 0 }}>
+              Sort by
+              <select className="input" value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+                <option value="opportunity">Opportunity Score</option>
+                <option value="discount">Highest Discount first</option>
+                <option value="pe">Lowest P/E first</option>
+              </select>
+            </label>
+          </div>
+
+          <div className="discountTableWrap">
+            <div className="table">
+              <div className="row head" style={{ gridTemplateColumns: "1fr 1.4fr 0.9fr 0.7fr 0.8fr 1fr 1.2fr 0.9fr" }}>
+                <div>Symbol</div>
+                <div>Name</div>
+                <div className="right">Discount</div>
+                <div className="right">P/E</div>
+                <div className="right">Weight</div>
+                <div>Zone</div>
+                <div>Suggestion</div>
+                <div className="right">Score</div>
+              </div>
+              <div className="discountRowsViewport">
+                {filteredRows.map((r) => (
+                  <div className="row" key={r.symbol} style={{ gridTemplateColumns: "1fr 1.4fr 0.9fr 0.7fr 0.8fr 1fr 1.2fr 0.9fr" }}>
+                    <div className="mono">{r.symbol}</div>
+                    <div title={r.name}>{r.name}</div>
+                    <div className="right strong">{fmt(r.discount)}%</div>
+                    <div className="right">{r.pe === null ? "--" : fmt(r.pe)}</div>
+                    <div className="right">{r.weight === null ? "--" : `${fmt((r.weight || 0) * 100)}%`}</div>
+                    <div className={r.zoneClass}>{r.zone}</div>
+                    <div className="muted small">{r.suggestion}</div>
+                    <div className="right strong">{r.opportunityScore}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </>
+      ) : null}
+
+      <div className="muted small" style={{ marginTop: 10 }}>
+        Decision guide: higher discount can indicate value entry zones, but combine with P/E and concentration before adding aggressively.
+      </div>
+    </div>
+  );
+}
+
 function PortfolioForecastChart({ portfolioId }) {
   const nav = useNavigate();
   const [data, setData] = useState(null);
   const [busy, setBusy] = useState(true);
   const [err, setErr] = useState("");
+  const [activeModel, setActiveModel] = useState("ensemble");
 
   useEffect(() => {
     let alive = true;
@@ -1690,23 +2274,396 @@ function PortfolioForecastChart({ portfolioId }) {
     };
   }, [portfolioId, nav]);
 
-  const points = useMemo(() => {
+  const baseSeries = useMemo(() => {
     const s = data?.series || [];
     return s.map((p, idx) => ({
-      x: p.date,
-      xLabel: idx === 0 || idx === Math.floor(s.length / 2) || idx === s.length - 1 ? p.date : "",
-      y: p.portfolio_value
-    }));
+      date: p.date,
+      y: Number(p.portfolio_value),
+      i: idx
+    })).filter((p) => Number.isFinite(p.y));
   }, [data]);
 
+  const modelBundle = useMemo(() => {
+    if (!baseSeries.length) return null;
+    const start = baseSeries[0].y;
+    const end = baseSeries[baseSeries.length - 1].y;
+    const n = Math.max(1, baseSeries.length - 1);
+    const avgStep = (end - start) / n;
+    const trendStrength = Math.min(0.2, Math.abs((end - start) / Math.max(1, start)));
+    const volProxy = Math.max(0.03, Math.min(0.18, trendStrength * 1.4 + 0.04));
+
+    const project = (factorFn) => baseSeries.map((p, idx) => {
+      const t = n === 0 ? 0 : idx / n;
+      const base = p.y;
+      return {
+        ...p,
+        y: base * factorFn(t, idx),
+      };
+    });
+
+    const conservative = project((t) => 1 - volProxy * 0.6 * t);
+    const momentum = project((t, idx) => {
+      const accel = 1 + (avgStep / Math.max(1, start)) * idx * 0.6;
+      return Math.max(0.5, accel + trendStrength * 0.5 * t);
+    });
+    const meanReversion = project((t) => {
+      const pullToMean = 1 - (trendStrength * 0.9) * t + (volProxy * 0.35) * (1 - t);
+      return Math.max(0.55, pullToMean);
+    });
+    const ensemble = baseSeries.map((p, idx) => ({
+      ...p,
+      y: (conservative[idx].y * 0.35) + (momentum[idx].y * 0.4) + (meanReversion[idx].y * 0.25)
+    }));
+
+    const models = {
+      conservative,
+      momentum,
+      meanReversion,
+      ensemble
+    };
+
+    const summarize = (key, label, risk) => {
+      const series = models[key];
+      const startV = series[0]?.y ?? null;
+      const endV = series[series.length - 1]?.y ?? null;
+      const ret = startV && endV ? ((endV - startV) / startV) * 100 : null;
+      return { key, label, risk, startV, endV, ret };
+    };
+
+    const summary = [
+      summarize("conservative", "Conservative", "Low"),
+      summarize("ensemble", "Ensemble", "Balanced"),
+      summarize("meanReversion", "Mean Reversion", "Medium"),
+      summarize("momentum", "Momentum", "High")
+    ];
+
+    const endValues = summary.map((s) => s.endV).filter((v) => Number.isFinite(v));
+    const spread = endValues.length ? ((Math.max(...endValues) - Math.min(...endValues)) / Math.max(1, start)) * 100 : 0;
+    const ensembleRet = summary.find((s) => s.key === "ensemble")?.ret ?? 0;
+    const decision = ensembleRet > 4
+      ? "Accumulation bias"
+      : ensembleRet > 0
+        ? "Selective hold/add"
+        : "Defensive posture";
+    const confidence = Math.max(25, Math.min(92, Math.round(86 - spread * 2.2)));
+
+    return {
+      models,
+      summary,
+      spread,
+      decision,
+      confidence,
+      ensembleRet
+    };
+  }, [baseSeries]);
+
+  const chartData = useMemo(() => {
+    if (!modelBundle) return null;
+    const modelNames = ["conservative", "meanReversion", "momentum", "ensemble"];
+    const modelColors = {
+      conservative: "#36d08e",
+      meanReversion: "#f5b946",
+      momentum: "#f96a8b",
+      ensemble: "#7ab5ff"
+    };
+    const all = modelNames.flatMap((k) => modelBundle.models[k] || []);
+    const ys = all.map((p) => p.y).filter((v) => Number.isFinite(v));
+    const minY = ys.length ? Math.min(...ys) : 0;
+    const maxY = ys.length ? Math.max(...ys) : 1;
+    const spanY = maxY - minY || 1;
+    const w = 980;
+    const h = 310;
+    const padL = 62;
+    const padR = 20;
+    const padT = 22;
+    const padB = 52;
+    const innerW = w - padL - padR;
+    const innerH = h - padT - padB;
+
+    const toCoord = (idx, yVal, seriesLen = baseSeries.length) => {
+      const x = padL + (idx / Math.max(1, seriesLen - 1)) * innerW;
+      const y = padT + (1 - (yVal - minY) / spanY) * innerH;
+      return { x, y };
+    };
+
+    const toPath = (pts) => pts.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x.toFixed(2)} ${p.y.toFixed(2)}`).join(" ");
+    const areaToBottom = (pts) => {
+      if (!pts.length) return "";
+      const start = pts[0];
+      const end = pts[pts.length - 1];
+      const bottomY = padT + innerH;
+      return `${toPath(pts)} L ${end.x.toFixed(2)} ${bottomY.toFixed(2)} L ${start.x.toFixed(2)} ${bottomY.toFixed(2)} Z`;
+    };
+
+    const modelPoints = {};
+    for (const key of modelNames) {
+      const s = modelBundle.models[key] || [];
+      modelPoints[key] = s.map((p, idx) => {
+        const c = toCoord(idx, p.y, s.length);
+        return { ...c, yValue: p.y, date: p.date };
+      });
+    }
+
+    const modelPath = (key) => {
+      const pts = modelPoints[key] || [];
+      if (pts.length < 2) return "";
+      return toPath(pts);
+    };
+
+    const modelAreaPath = (key) => {
+      const pts = modelPoints[key] || [];
+      if (pts.length < 2) return "";
+      return areaToBottom(pts);
+    };
+
+    const coneTop = [];
+    const coneBottom = [];
+    for (let i = 0; i < baseSeries.length; i += 1) {
+      const vals = modelNames
+        .map((k) => modelBundle.models[k]?.[i]?.y)
+        .filter((v) => Number.isFinite(v));
+      if (!vals.length) continue;
+      const hi = Math.max(...vals);
+      const lo = Math.min(...vals);
+      const topC = toCoord(i, hi, baseSeries.length);
+      const bottomC = toCoord(i, lo, baseSeries.length);
+      coneTop.push(topC);
+      coneBottom.push(bottomC);
+    }
+
+    const conePath = coneTop.length > 1 && coneBottom.length > 1
+      ? `${toPath(coneTop)} ${toPath([...coneBottom].reverse()).replace(/^M\s/, "L ")} Z`
+      : "";
+
+    const modelEndPoints = {};
+    for (const key of modelNames) {
+      const pts = modelPoints[key] || [];
+      if (pts.length) modelEndPoints[key] = pts[pts.length - 1];
+    }
+
+    const ticks = [0, 0.25, 0.5, 0.75, 1].map((t) => minY + spanY * (1 - t));
+    const xTicks = [0, Math.floor((baseSeries.length - 1) / 2), baseSeries.length - 1].filter((v, i, a) => a.indexOf(v) === i);
+
+    return {
+      modelNames,
+      modelColors,
+      minY,
+      maxY,
+      spanY,
+      w,
+      h,
+      padL,
+      padR,
+      padT,
+      padB,
+      innerW,
+      innerH,
+      modelPath,
+      modelAreaPath,
+      modelEndPoints,
+      conePath,
+      ticks,
+      xTicks
+    };
+  }, [modelBundle, baseSeries]);
+
+  const modelSummary = useMemo(() => {
+    if (!modelBundle) return [];
+    return [...modelBundle.summary].sort((a, b) => (b.ret || -999) - (a.ret || -999));
+  }, [modelBundle]);
+
+  const activeSeries = useMemo(() => {
+    if (!modelBundle) return [];
+    return modelBundle.models[activeModel] || [];
+  }, [modelBundle, activeModel]);
+
+  const activeMeta = useMemo(() => {
+    return modelSummary.find((m) => m.key === activeModel) || null;
+  }, [modelSummary, activeModel]);
+
+  const yTicks = useMemo(() => {
+    if (!chartData) return [];
+    return chartData.ticks.map((t) => ({
+      value: t,
+      y: chartData.padT + (1 - (t - chartData.minY) / chartData.spanY) * chartData.innerH
+    }));
+  }, [chartData]);
+
   return (
-    <div style={{ marginTop: 10 }}>
-      {busy ? <div className="skeleton h200" /> : null}
+    <div className="transactionsChartBody" style={{ marginTop: 10 }}>
+      {busy ? <ModuleLoader title="Running forecast models" hint="Generating multi-model outlook and confidence..." /> : null}
       {err ? <div className="error">{err}</div> : null}
-      {!busy && points.length === 0 ? <div className="muted">No forecast available (add holdings first).</div> : null}
-      {points.length ? <LineChart points={points} xLabel="Next 90 days" yLabel="Portfolio value" /> : null}
+      {!busy && !baseSeries.length ? <div className="muted">No forecast available (add holdings first).</div> : null}
+
+      {baseSeries.length && modelBundle && chartData ? (
+        <>
+          <div className="forecastInsightGrid">
+            <div className="forecastDecisionCard cardA">
+              <div className="kpiLabel">Decision</div>
+              <div className="kpiValue">{modelBundle.decision}</div>
+            </div>
+            <div className="forecastDecisionCard cardB">
+              <div className="kpiLabel">Ensemble Return</div>
+              <div className={`kpiValue ${modelBundle.ensembleRet >= 0 ? "pos" : "neg"}`}>{fmt(round2(modelBundle.ensembleRet))}%</div>
+            </div>
+            <div className="forecastDecisionCard cardC">
+              <div className="kpiLabel">Model Spread Risk</div>
+              <div className={`kpiValue ${modelBundle.spread > 8 ? "neg" : "neutral"}`}>{fmt(round2(modelBundle.spread))}%</div>
+            </div>
+            <div className="forecastDecisionCard cardD">
+              <div className="kpiLabel">Confidence</div>
+              <div className="kpiValue">{modelBundle.confidence}%</div>
+            </div>
+          </div>
+
+          <div className="forecastModelTabs">
+            {modelSummary.map((m) => (
+              <button
+                key={m.key}
+                type="button"
+                className={`forecastModelChip ${activeModel === m.key ? "active" : ""}`}
+                onClick={() => setActiveModel(m.key)}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="forecastVizWrap">
+            <svg className="forecastVizSvg" viewBox={`0 0 ${chartData.w} ${chartData.h}`} preserveAspectRatio="none" role="img" aria-label="Forecast models chart">
+              <defs>
+                <linearGradient id="forecastBandUp" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="rgba(67,212,136,0.20)" />
+                  <stop offset="100%" stopColor="rgba(67,212,136,0.04)" />
+                </linearGradient>
+                <linearGradient id="forecastBandDown" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="rgba(255,107,107,0.06)" />
+                  <stop offset="100%" stopColor="rgba(255,107,107,0.18)" />
+                </linearGradient>
+                <linearGradient id="forecastConeGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="rgba(122,181,255,0.22)" />
+                  <stop offset="100%" stopColor="rgba(122,181,255,0.06)" />
+                </linearGradient>
+                <linearGradient id="forecastActiveArea" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="rgba(122,181,255,0.30)" />
+                  <stop offset="100%" stopColor="rgba(122,181,255,0.03)" />
+                </linearGradient>
+                <filter id="forecastGlow" x="-30%" y="-30%" width="160%" height="160%">
+                  <feGaussianBlur stdDeviation="4.5" result="blur" />
+                  <feMerge>
+                    <feMergeNode in="blur" />
+                    <feMergeNode in="SourceGraphic" />
+                  </feMerge>
+                </filter>
+              </defs>
+
+              <rect x={chartData.padL} y={chartData.padT} width={chartData.innerW} height={chartData.innerH} fill="rgba(255,255,255,0.02)" rx="12" />
+              <rect x={chartData.padL} y={chartData.padT} width={chartData.innerW} height={chartData.innerH * 0.45} fill="url(#forecastBandUp)" />
+              <rect x={chartData.padL} y={chartData.padT + chartData.innerH * 0.45} width={chartData.innerW} height={chartData.innerH * 0.55} fill="url(#forecastBandDown)" />
+              {chartData.conePath ? <path d={chartData.conePath} fill="url(#forecastConeGrad)" /> : null}
+              {chartData.modelAreaPath(activeModel) ? <path d={chartData.modelAreaPath(activeModel)} fill="url(#forecastActiveArea)" /> : null}
+
+              {yTicks.map((t, idx) => (
+                <g key={idx}>
+                  <line x1={chartData.padL} y1={t.y} x2={chartData.w - chartData.padR} y2={t.y} className="histGrid" />
+                  <text x={chartData.padL - 10} y={t.y} className="histTick" textAnchor="end" dominantBaseline="middle">
+                    {fmt(t.value)}
+                  </text>
+                </g>
+              ))}
+
+              {chartData.xTicks.map((idx) => {
+                const x = chartData.padL + ((idx || 0) / Math.max(1, baseSeries.length - 1)) * chartData.innerW;
+                return (
+                  <g key={idx}>
+                    <line x1={x} y1={chartData.padT + chartData.innerH} x2={x} y2={chartData.padT + chartData.innerH + 6} className="histAxis" />
+                    <text x={x} y={chartData.padT + chartData.innerH + 18} className="histTick" textAnchor="middle">
+                      {baseSeries[idx]?.date || ""}
+                    </text>
+                  </g>
+                );
+              })}
+
+              {chartData.modelNames.map((k) => (
+                <path
+                  key={k}
+                  d={chartData.modelPath(k)}
+                  fill="none"
+                  stroke={chartData.modelColors[k]}
+                  strokeWidth={k === activeModel ? 3.8 : 2}
+                  strokeOpacity={k === activeModel ? 1 : 0.45}
+                  strokeLinecap="round"
+                />
+              ))}
+              {chartData.modelPath(activeModel) ? (
+                <path
+                  d={chartData.modelPath(activeModel)}
+                  fill="none"
+                  stroke={chartData.modelColors[activeModel]}
+                  strokeWidth={2.2}
+                  strokeOpacity={0.95}
+                  strokeLinecap="round"
+                  filter="url(#forecastGlow)"
+                />
+              ) : null}
+              {chartData.modelNames.map((k) => {
+                const p = chartData.modelEndPoints[k];
+                if (!p) return null;
+                return (
+                  <g key={`${k}-end`}>
+                    <circle cx={p.x} cy={p.y} r={k === activeModel ? 5 : 3.5} fill={chartData.modelColors[k]} opacity={k === activeModel ? 1 : 0.75} />
+                  </g>
+                );
+              })}
+            </svg>
+          </div>
+
+          <div className="forecastLegend">
+            {chartData.modelNames.map((k) => (
+              <div key={k} className="forecastLegendItem">
+                <span className="forecastLegendDot" style={{ background: chartData.modelColors[k] }} />
+                <span className={k === activeModel ? "strong" : "muted"}>
+                  {modelSummary.find((m) => m.key === k)?.label || k}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          <div className="forecastTableWrap">
+            <div className="table">
+              <div className="row head" style={{ gridTemplateColumns: "1.2fr 0.7fr 1fr 1fr 0.9fr" }}>
+                <div>Model</div>
+                <div>Risk</div>
+                <div className="right">Start</div>
+                <div className="right">End (90d)</div>
+                <div className="right">Return</div>
+              </div>
+              {modelSummary.map((m) => (
+                <div className="row" key={m.key} style={{ gridTemplateColumns: "1.2fr 0.7fr 1fr 1fr 0.9fr" }}>
+                  <div className={m.key === activeModel ? "strong" : ""}>{m.label}</div>
+                  <div>{m.risk}</div>
+                  <div className="right">{fmt(round2(m.startV))}</div>
+                  <div className="right">{fmt(round2(m.endV))}</div>
+                  <div className={`right strong ${(m.ret || 0) >= 0 ? "pos" : "neg"}`}>{fmt(round2(m.ret))}%</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {activeMeta && activeSeries.length ? (
+            <div className="forecastNarrative">
+              <div className="strong">{activeMeta.label} model outlook</div>
+              <div className="muted small" style={{ marginTop: 4 }}>
+                Expected move over 90 days: <span className={activeMeta.ret >= 0 ? "pos strong" : "neg strong"}>{fmt(round2(activeMeta.ret))}%</span>.
+                Suggested posture: {modelBundle.decision}. Use model spread ({fmt(round2(modelBundle.spread))}%) as risk budget signal.
+              </div>
+            </div>
+          ) : null}
+        </>
+      ) : null}
+
       <div className="muted small" style={{ marginTop: 10 }}>
-        {data?.disclaimer || "Educational forecast only."}
+        {data?.disclaimer || "Educational forecast using multiple heuristic models. Not investment advice."}
       </div>
     </div>
   );

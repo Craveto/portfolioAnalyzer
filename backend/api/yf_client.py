@@ -403,12 +403,12 @@ def history_daily(ticker: str, period: str = "2y"):
     return df
 
 
-def search_indian_equities(query: str, max_results: int = 25) -> list[dict]:
+def search_equities(query: str, max_results: int = 25) -> list[dict]:
     query = (query or "").strip()
     if not query:
         return []
 
-    key = f"search:in:{query}:{max_results}"
+    key = f"search:eq:{query}:{max_results}"
     cached = _get_cached(key)
     if cached is not None:
         return cached
@@ -432,17 +432,44 @@ def search_indian_equities(query: str, max_results: int = 25) -> list[dict]:
         text = str(value).strip()
         return text or symbol
 
+    def _exchange_label(raw_exchange: str | None) -> str:
+        text = str(raw_exchange or "").upper()
+        if ".NS" in text or "NSE" in text or "NATIONAL STOCK EXCHANGE" in text:
+            return "NSE"
+        if ".BO" in text or "BSE" in text or "BOMBAY STOCK EXCHANGE" in text:
+            return "BSE"
+        if "NASDAQ" in text or "NMS" in text:
+            return "NASDAQ"
+        if "NYSE" in text:
+            return "NYSE"
+        if text:
+            return text[:8]
+        return "US"
+
+    def _is_supported_equity_symbol(symbol: str) -> bool:
+        s = (symbol or "").strip().upper()
+        if not s:
+            return False
+        if s.startswith("^"):
+            return False
+        if s.endswith(".NS") or s.endswith(".BO"):
+            return True
+        # Most US equities/ETFs on yfinance are plain symbols (AAPL, MSFT, SPY, BRK-B).
+        return bool(re.match(r"^[A-Z][A-Z0-9\.\-]{0,9}$", s))
+
     out: list[dict] = []
     for q in getattr(s, "quotes", []) or []:
         symbol = q.get("symbol")
         if not symbol:
             continue
-        if not (symbol.endswith(".NS") or symbol.endswith(".BO")):
+        symbol = str(symbol).strip().upper()
+        if not _is_supported_equity_symbol(symbol):
             continue
-        if q.get("quoteType") not in (None, "EQUITY"):
+        quote_type = str(q.get("quoteType") or "").upper()
+        if quote_type and quote_type not in {"EQUITY", "ETF"}:
             continue
         name = _name_text(q.get("longname") or q.get("shortname") or q.get("name"), symbol)
-        exch = q.get("exchDisp") or q.get("exchange")
+        exch = _exchange_label(q.get("exchDisp") or q.get("exchange"))
         out.append({"symbol": symbol, "name": name, "exchange": exch})
 
     # de-dupe by symbol (keep first)
@@ -457,6 +484,12 @@ def search_indian_equities(query: str, max_results: int = 25) -> list[dict]:
 
     _set_cached(key, deduped, ttl_seconds=30)
     return deduped
+
+
+def search_indian_equities(query: str, max_results: int = 25) -> list[dict]:
+    """Backward-compatible wrapper used by older code paths."""
+    out = search_equities(query=query, max_results=max_results)
+    return [item for item in out if str(item.get("symbol") or "").endswith((".NS", ".BO"))]
 
 
 def get_fundamentals(ticker: str) -> dict:
