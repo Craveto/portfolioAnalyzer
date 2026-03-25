@@ -1391,6 +1391,101 @@ a {
   gap: 18px;
 }
 
+.landingValueSection {
+  gap: 14px;
+}
+
+.landingValueGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.landingValueCard {
+  padding: 12px;
+  border-radius: 14px;
+  background:
+    radial-gradient(280px 110px at 15% 0%, color-mix(in srgb, var(--accent1) 14%, transparent), transparent 65%),
+    rgba(255, 255, 255, 0.04);
+}
+
+.landingValueTag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 30px;
+  height: 24px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.05);
+  font-size: 11px;
+  font-weight: 850;
+  color: rgba(224, 238, 255, 0.9);
+}
+
+.landingValueTitle {
+  margin-top: 9px;
+  font-weight: 850;
+  letter-spacing: 0.1px;
+}
+
+.landingFlowStrip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 6px 10px;
+}
+
+.landingFlowChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 13px;
+  font-weight: 760;
+}
+
+.landingFlowChip span {
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  font-weight: 850;
+  border: 1px solid color-mix(in srgb, var(--accent1) 40%, transparent);
+  background: color-mix(in srgb, var(--accent1) 18%, transparent);
+}
+
+.landingFlowArrow {
+  color: rgba(224, 236, 255, 0.7);
+  font-weight: 850;
+}
+
+.landingActionStrip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 16px;
+  background:
+    radial-gradient(320px 120px at 15% 0%, color-mix(in srgb, var(--accent2) 14%, transparent), transparent 65%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.03));
+}
+
+.landingActionButtons {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 .landingFeature {
   background: radial-gradient(600px 240px at 20% 0%, color-mix(in srgb, var(--accent1) 16%, transparent), transparent 60%),
     linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.035));
@@ -1571,6 +1666,10 @@ a {
     grid-template-columns: 1fr 1fr;
   }
 
+  .landingValueGrid {
+    grid-template-columns: 1fr 1fr;
+  }
+
   .landingSteps {
     grid-template-columns: 1fr;
   }
@@ -1595,6 +1694,11 @@ a {
 
   .landingPulseChartOverlay {
     height: 148px;
+  }
+
+  .landingActionStrip {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }
 
@@ -2162,6 +2266,79 @@ a {
   gap: 10px;
   flex-wrap: wrap;
   align-items: center;
+}
+
+.portfolioHeadingWrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.iconBtn {
+  min-width: 36px;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.recoModal {
+  width: min(880px, 100%);
+}
+
+.modalHeaderActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.recoList {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.recoCard {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.04);
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.recoCardHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.recoScore {
+  border: 1px solid rgba(102, 189, 255, 0.38);
+  background: rgba(102, 189, 255, 0.14);
+  color: #b7dcff;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 12px;
+  padding: 4px 8px;
+}
+
+.recoMetrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.recoActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .transactionsTabs {
@@ -2818,6 +2995,29 @@ a {
   margin-top: 10px;
 }
 
+.portfoliosViewport.scrollable {
+  overflow-y: scroll;
+  overflow-x: hidden;
+  padding-right: 6px;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--accent1) 62%, rgba(255, 255, 255, 0.2)) rgba(255, 255, 255, 0.05);
+}
+
+.portfoliosViewport.scrollable::-webkit-scrollbar {
+  width: 10px;
+}
+
+.portfoliosViewport.scrollable::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 999px;
+}
+
+.portfoliosViewport.scrollable::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  border: 2px solid rgba(10, 16, 30, 0.85);
+  background: linear-gradient(180deg, rgba(123, 182, 255, 0.88), rgba(162, 208, 255, 0.72));
+}
+
 .listItemRow {
   display: grid;
   grid-template-columns: 1fr auto;
@@ -3250,6 +3450,69 @@ a {
   padding: 10px 12px;
   display: grid;
   gap: 4px;
+}
+
+.csvPreviewTargets {
+  margin-top: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  padding: 10px 12px;
+}
+
+.csvPreviewTargetList {
+  margin-top: 8px;
+  display: grid;
+  gap: 6px;
+  max-height: 210px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.csvPreviewTargetRow {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 6px 8px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.csvPreviewTargetLeft {
+  display: grid;
+  gap: 2px;
+}
+
+.csvPreviewTargetRight {
+  display: grid;
+  justify-items: end;
+  gap: 3px;
+  text-align: right;
+}
+
+.csvTargetBadge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.2px;
+}
+
+.csvTargetBadge.existing {
+  color: #9de9c8;
+  border-color: rgba(67, 212, 136, 0.4);
+  background: rgba(67, 212, 136, 0.13);
+}
+
+.csvTargetBadge.new {
+  color: #b9dcff;
+  border-color: rgba(123, 182, 255, 0.42);
+  background: rgba(123, 182, 255, 0.14);
 }
 
 .csvProgressWrap {

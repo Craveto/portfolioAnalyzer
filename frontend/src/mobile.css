@@ -144,8 +144,20 @@
     grid-template-columns: 1fr;
   }
 
+  .landingValueGrid {
+    grid-template-columns: 1fr;
+  }
+
   .landingHeroPills {
     gap: 6px;
+  }
+
+  .landingFlowStrip {
+    gap: 8px;
+  }
+
+  .landingFlowArrow {
+    display: none;
   }
 
   .landingPulseMeta {
@@ -164,6 +176,24 @@
   .landingFooterCta {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .landingActionStrip {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .portfoliosViewport.scrollable {
+    max-height: 372px;
+    padding-right: 2px;
+  }
+
+  .recoList {
+    grid-template-columns: 1fr;
+  }
+
+  .recoMetrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -206,6 +236,32 @@
     max-height: min(92svh, 760px);
     overflow: auto;
     border-radius: 16px;
+  }
+
+  .portfolioHeadingWrap {
+    width: 100%;
+  }
+
+  .portfolioSectionActions {
+    width: 100%;
+  }
+
+  .portfolioSectionActions .btn {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+
+  .recoMetrics {
+    grid-template-columns: 1fr;
+  }
+
+  .recoActions {
+    justify-content: stretch;
+  }
+
+  .recoActions .btn {
+    flex: 1 1 auto;
+    justify-content: center;
   }
 
   .navMobile {

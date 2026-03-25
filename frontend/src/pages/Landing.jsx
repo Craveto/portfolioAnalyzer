@@ -442,75 +442,58 @@ export default function Landing() {
           {assetTab === "metals" ? <MetalsPanel /> : <BtcPanel />}
         </section>
 
-        <section className="landingSection">
+        <section className="landingSection landingValueSection">
           <div className="landingSectionHead">
-            <h2 className="landingH2">What you can do</h2>
-            <div className="muted small">Built to keep data light in SQL, heavy insights in UI.</div>
+            <h2 className="landingH2">Built for fast decisions</h2>
+            <div className="muted small">Less setup. More signal.</div>
           </div>
-          <div className="landingFeatureGrid">
-            <div className="card landingFeature">
-              <div className="landingFeatureTitle">Create portfolios</div>
-              <div className="muted">Separate baskets (IT, Banking, Long-term) and compare analysis.</div>
-            </div>
-            <div className="card landingFeature">
-              <div className="landingFeatureTitle">Add trades fast</div>
-              <div className="muted">Search with live preview (Last, P/E, Discount) and build holdings automatically.</div>
-            </div>
-            <div className="card landingFeature">
-              <div className="landingFeatureTitle">EDA + forecasts</div>
-              <div className="muted">P/E chart, discount chart, and an educational forward value path.</div>
-            </div>
-            <div className="card landingFeature">
-              <div className="landingFeatureTitle">Watchlist & alerts</div>
-              <div className="muted">Track symbols and set simple above/below price alerts.</div>
-            </div>
-          </div>
-        </section>
 
-        <section className="landingSection">
-          <div className="landingSectionHead">
-            <h2 className="landingH2">How it works</h2>
-            <div className="muted small">Three steps to insight.</div>
-          </div>
-          <div className="landingSteps">
-            <div className="card landingStep">
-              <div className="landingStepNum">1</div>
-              <div>
-                <div className="strong">Login & create a portfolio</div>
-                <div className="muted small">Name it and keep your holdings organized.</div>
-              </div>
+          <div className="landingValueGrid">
+            <div className="card landingValueCard">
+              <div className="landingValueTag">01</div>
+              <div className="landingValueTitle">Portfolio stacks</div>
+              <div className="muted small">Create baskets. Compare quickly.</div>
             </div>
-            <div className="card landingStep">
-              <div className="landingStepNum">2</div>
-              <div>
-                <div className="strong">Add buy/sell trades</div>
-                <div className="muted small">Holdings update automatically with avg price & PnL.</div>
-              </div>
+            <div className="card landingValueCard">
+              <div className="landingValueTag">02</div>
+              <div className="landingValueTitle">Quick trade add</div>
+              <div className="muted small">Search, preview, add in seconds.</div>
             </div>
-            <div className="card landingStep">
-              <div className="landingStepNum">3</div>
-              <div>
-                <div className="strong">Explore EDA charts</div>
-                <div className="muted small">See valuation & discount patterns quickly.</div>
-              </div>
+            <div className="card landingValueCard">
+              <div className="landingValueTag">03</div>
+              <div className="landingValueTitle">Charts + forecast</div>
+              <div className="muted small">P/E, discount, and forward view.</div>
+            </div>
+            <div className="card landingValueCard">
+              <div className="landingValueTag">04</div>
+              <div className="landingValueTitle">Alerts + watchlist</div>
+              <div className="muted small">Track symbols and key levels.</div>
             </div>
           </div>
-        </section>
 
-        <section className="card landingFooterCta">
-          <div>
-            <div className="landingFooterTitle">Ready to analyze?</div>
-            <div className="muted">Start with a demo portfolio in under a minute.</div>
+          <div className="landingFlowStrip">
+            <div className="landingFlowChip"><span>1</span> Create portfolio</div>
+            <div className="landingFlowArrow">→</div>
+            <div className="landingFlowChip"><span>2</span> Add trades</div>
+            <div className="landingFlowArrow">→</div>
+            <div className="landingFlowChip"><span>3</span> Open insights</div>
           </div>
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            {!authed ? (
-              <button className="btn primary" onClick={() => setLoginOpen(true)}>
-                Get started
-              </button>
-            ) : null}
-            <a className="btn ghost" href="/dashboard">
-              {authed ? "Go to dashboard" : "Open dashboard"}
-            </a>
+
+          <div className="card landingActionStrip">
+            <div>
+              <div className="landingFooterTitle">Ready to analyze?</div>
+              <div className="muted small">Start in under a minute.</div>
+            </div>
+            <div className="landingActionButtons">
+              {!authed ? (
+                <button className="btn primary" onClick={() => setLoginOpen(true)}>
+                  Get started
+                </button>
+              ) : null}
+              <a className="btn ghost" href="/dashboard">
+                {authed ? "Open dashboard" : "Try dashboard"}
+              </a>
+            </div>
           </div>
         </section>
       </main>

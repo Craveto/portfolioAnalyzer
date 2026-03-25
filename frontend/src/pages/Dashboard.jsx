@@ -44,6 +44,8 @@ export default function Dashboard() {
   const [quickImportOpen, setQuickImportOpen] = useState(false);
   const [quickImportFile, setQuickImportFile] = useState(null);
   const [quickImportGroupBySector, setQuickImportGroupBySector] = useState(false);
+  const [quickImportNamingMode, setQuickImportNamingMode] = useState("auto");
+  const [quickImportBaseName, setQuickImportBaseName] = useState("");
   const [quickImportPreview, setQuickImportPreview] = useState(null);
   const [quickPreviewBusy, setQuickPreviewBusy] = useState(false);
   const [quickImportBusy, setQuickImportBusy] = useState(false);
@@ -52,6 +54,11 @@ export default function Dashboard() {
   const [quickProgress, setQuickProgress] = useState(0);
   const [quickPhase, setQuickPhase] = useState("");
   const progressTimerRef = useRef(null);
+  const quickPreviewAbortRef = useRef(null);
+  const quickImportAbortRef = useRef(null);
+  const portfolioRowMeasureRef = useRef(null);
+  const [portfolioViewportHeight, setPortfolioViewportHeight] = useState(null);
+  const MAX_VISIBLE_PORTFOLIOS = 5;
 
   useEffect(() => {
     refreshSummary(false);
@@ -78,6 +85,51 @@ export default function Dashboard() {
   }
 
   useEffect(() => () => stopProgress(null), []);
+
+  function closeQuickImportModal() {
+    try {
+      quickPreviewAbortRef.current?.abort?.();
+    } catch {
+      // ignore
+    }
+    try {
+      quickImportAbortRef.current?.abort?.();
+    } catch {
+      // ignore
+    }
+    quickPreviewAbortRef.current = null;
+    quickImportAbortRef.current = null;
+
+    setQuickPreviewBusy(false);
+    setQuickImportBusy(false);
+    setQuickImportOpen(false);
+    setQuickImportError("");
+    setQuickImportResult(null);
+    setQuickImportPreview(null);
+    setQuickImportNamingMode("auto");
+    setQuickImportBaseName("");
+    setQuickProgress(0);
+    setQuickPhase("");
+    stopProgress(0);
+  }
+
+  function getQuickImportBaseName() {
+    if (quickImportNamingMode !== "custom") return undefined;
+    const trimmed = (quickImportBaseName || "").trim();
+    return trimmed || undefined;
+  }
+
+  useEffect(() => {
+    if (portfolios.length <= MAX_VISIBLE_PORTFOLIOS) {
+      setPortfolioViewportHeight(null);
+      return;
+    }
+    const rowH = portfolioRowMeasureRef.current?.getBoundingClientRect?.().height || 0;
+    if (!rowH) return;
+    // 5 rows + 4 gaps (10px each) + tiny breathing room for border.
+    const h = Math.round((rowH * MAX_VISIBLE_PORTFOLIOS) + (4 * 10) + 2);
+    setPortfolioViewportHeight(h);
+  }, [portfolios.length]);
 
   async function refreshSummary(force = false) {
     try {
@@ -231,12 +283,22 @@ export default function Dashboard() {
         </section>
 
         <section className="card" id="portfoliosSection">
-          <h3>Your Portfolios</h3>
+          <div className="portfolioSectionHead">
+            <h3 style={{ margin: 0 }}>Your Portfolios</h3>
+            {portfolios.length > MAX_VISIBLE_PORTFOLIOS ? (
+              <div className="muted small">
+                Showing {MAX_VISIBLE_PORTFOLIOS} of {portfolios.length}
+              </div>
+            ) : null}
+          </div>
           {error ? <div className="error">{error}</div> : null}
           {portfolios.length === 0 ? <div className="muted">No portfolios yet. Create your first one.</div> : null}
-          <div className="list">
-            {portfolios.map((p) => (
-              <div className="listItemRow" key={p.id}>
+          <div
+            className={`list portfoliosViewport ${portfolios.length > MAX_VISIBLE_PORTFOLIOS ? "scrollable" : ""}`}
+            style={portfolios.length > MAX_VISIBLE_PORTFOLIOS && portfolioViewportHeight ? { maxHeight: `${portfolioViewportHeight}px` } : undefined}
+          >
+            {portfolios.map((p, idx) => (
+              <div className="listItemRow" key={p.id} ref={idx === 0 ? portfolioRowMeasureRef : null}>
                 <Link className="listItem" to={`/portfolio/${p.id}`}>
                   <div className="strong">{p.name}</div>
                   <div className="muted small" style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
@@ -418,6 +480,8 @@ export default function Dashboard() {
         open={quickImportOpen}
         file={quickImportFile}
         groupBySector={quickImportGroupBySector}
+        namingMode={quickImportNamingMode}
+        customBaseName={quickImportBaseName}
         preview={quickImportPreview}
         previewBusy={quickPreviewBusy}
         busy={quickImportBusy}
@@ -425,16 +489,7 @@ export default function Dashboard() {
         phase={quickPhase}
         error={quickImportError}
         result={quickImportResult}
-        onClose={() => {
-          if (quickImportBusy || quickPreviewBusy) return;
-          setQuickImportOpen(false);
-          setQuickImportError("");
-          setQuickImportResult(null);
-          setQuickImportPreview(null);
-          setQuickProgress(0);
-          setQuickPhase("");
-          stopProgress(0);
-        }}
+        onClose={closeQuickImportModal}
         onFileChange={(f) => {
           setQuickImportFile(f);
           setQuickImportError("");
@@ -449,25 +504,39 @@ export default function Dashboard() {
           setQuickImportPreview(null);
           setQuickImportResult(null);
         }}
+        onNamingModeChange={(v) => {
+          setQuickImportNamingMode(v);
+          setQuickImportPreview(null);
+          setQuickImportResult(null);
+        }}
+        onCustomBaseNameChange={(v) => {
+          setQuickImportBaseName(v);
+          setQuickImportPreview(null);
+          setQuickImportResult(null);
+        }}
         onPreview={async () => {
           if (!quickImportFile || quickImportBusy || quickPreviewBusy) return;
           setQuickPreviewBusy(true);
           setQuickImportError("");
           setQuickImportResult(null);
           startProgress("Previewing CSV");
+          const ctrl = new AbortController();
+          quickPreviewAbortRef.current = ctrl;
           try {
             const preview = await api.previewPortfolioCsv({
               file: quickImportFile,
               groupBySector: quickImportGroupBySector,
-              baseName: `CSV Import ${new Date().toISOString().slice(0, 10)}`
+              baseName: getQuickImportBaseName(),
+              signal: ctrl.signal
             });
             setQuickImportPreview(preview);
             stopProgress(100);
           } catch (e) {
-            setQuickImportError(e.message || "CSV preview failed");
+            if (e?.name !== "AbortError") setQuickImportError(e.message || "CSV preview failed");
             setQuickImportPreview(null);
             stopProgress(0);
           } finally {
+            quickPreviewAbortRef.current = null;
             setQuickPreviewBusy(false);
             window.setTimeout(() => {
               setQuickProgress((p) => (p === 100 ? 0 : p));
@@ -477,27 +546,63 @@ export default function Dashboard() {
         }}
         onImport={async () => {
           if (!quickImportFile || quickImportBusy || quickPreviewBusy) return;
-          if (!quickImportPreview || !Number(quickImportPreview.rows_resolved || 0)) {
-            setQuickImportError("Please run Preview first and ensure at least one stock is resolved.");
+          let previewData = quickImportPreview;
+          if (!previewData) {
+            setQuickPreviewBusy(true);
+            startProgress("Previewing CSV");
+            const previewCtrl = new AbortController();
+            quickPreviewAbortRef.current = previewCtrl;
+            try {
+              previewData = await api.previewPortfolioCsv({
+                file: quickImportFile,
+                groupBySector: quickImportGroupBySector,
+                baseName: getQuickImportBaseName(),
+                signal: previewCtrl.signal
+              });
+              setQuickImportPreview(previewData);
+            } catch (e) {
+              if (e?.name !== "AbortError") setQuickImportError(e.message || "CSV preview failed");
+              stopProgress(0);
+              return;
+            } finally {
+              quickPreviewAbortRef.current = null;
+              setQuickPreviewBusy(false);
+            }
+          }
+          if (!Number(previewData?.rows_resolved || 0)) {
+            setQuickImportError("No valid rows found after preview. Please check your CSV columns.");
+            stopProgress(0);
             return;
           }
           setQuickImportBusy(true);
           setQuickImportError("");
           setQuickImportResult(null);
           startProgress("Creating portfolios");
+          const ctrl = new AbortController();
+          quickImportAbortRef.current = ctrl;
           try {
             const imported = await api.importPortfolioCsv({
               file: quickImportFile,
               groupBySector: quickImportGroupBySector,
-              baseName: `CSV Import ${new Date().toISOString().slice(0, 10)}`
+              baseName: getQuickImportBaseName(),
+              signal: ctrl.signal
             });
             setQuickImportResult(imported);
             await refreshSummary(true);
             stopProgress(100);
+            const targetPortfolioId =
+              imported?.created_portfolios?.[0]?.id ||
+              imported?.touched_portfolios?.[0]?.id ||
+              null;
+            window.setTimeout(() => {
+              closeQuickImportModal();
+              if (targetPortfolioId) nav(`/portfolio/${targetPortfolioId}`);
+            }, 350);
           } catch (e) {
-            setQuickImportError(e.message || "CSV import failed");
+            if (e?.name !== "AbortError") setQuickImportError(e.message || "CSV import failed");
             stopProgress(0);
           } finally {
+            quickImportAbortRef.current = null;
             setQuickImportBusy(false);
             window.setTimeout(() => {
               setQuickProgress((p) => (p === 100 ? 0 : p));
@@ -514,6 +619,8 @@ function QuickStocksAddModal({
   open,
   file,
   groupBySector,
+  namingMode,
+  customBaseName,
   preview,
   previewBusy,
   busy,
@@ -524,6 +631,8 @@ function QuickStocksAddModal({
   onClose,
   onFileChange,
   onToggleGroupBySector,
+  onNamingModeChange,
+  onCustomBaseNameChange,
   onPreview,
   onImport
 }) {
@@ -540,7 +649,7 @@ function QuickStocksAddModal({
       <div className="modal">
         <div className="modalHeader">
           <h2>Quick Stocks Add</h2>
-          <button className="btn ghost" onClick={onClose} type="button" disabled={busy || previewBusy}>
+          <button className="btn ghost" onClick={onClose} type="button">
             Close
           </button>
         </div>
@@ -628,6 +737,28 @@ function QuickStocksAddModal({
           </div>
         ) : null}
 
+        {previewRows.length ? (
+          <div className="csvPreviewTargets">
+            <div className="strong">Import target preview</div>
+            <div className="csvPreviewTargetList">
+              {previewRows.map((it, idx) => (
+                <div className="csvPreviewTargetRow" key={`pv-${idx}-${it.symbol}`}>
+                  <div className="csvPreviewTargetLeft">
+                    <span className="mono">{it.symbol}</span>
+                    <span className="muted small">{it.name || "-"}</span>
+                  </div>
+                  <div className="csvPreviewTargetRight">
+                    <span className={`csvTargetBadge ${it.portfolio_target_existing ? "existing" : "new"}`}>
+                      {it.portfolio_target_existing ? "Existing" : "New"}
+                    </span>
+                    <span className="muted small">{it.portfolio_target_name || it.portfolio_name || "-"}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
         {preview ? (
           <label className="label" style={{ marginTop: 12 }}>
             Create portfolios by
@@ -643,6 +774,32 @@ function QuickStocksAddModal({
           </label>
         ) : null}
 
+        <label className="label" style={{ marginTop: 12 }}>
+          Portfolio naming
+          <select
+            className="input"
+            value={namingMode}
+            onChange={(e) => onNamingModeChange(e.target.value)}
+            disabled={busy || previewBusy}
+          >
+            <option value="auto">Default (system decides)</option>
+            <option value="custom">Custom name</option>
+          </select>
+        </label>
+
+        {namingMode === "custom" ? (
+          <label className="label">
+            Custom name
+            <input
+              className="input"
+              placeholder="e.g. Long-Term Bets"
+              value={customBaseName}
+              onChange={(e) => onCustomBaseNameChange(e.target.value)}
+              disabled={busy || previewBusy}
+            />
+          </label>
+        ) : null}
+
         {result ? (
           <div className="csvImportSummary">
             <div className="strong">Import completed</div>
@@ -651,7 +808,10 @@ function QuickStocksAddModal({
             </div>
             <div className="muted small">BUY transactions created: {result.transactions_created ?? result.rows_processed ?? 0}</div>
             <div className="muted small">
-              Created portfolios: {(result.created_portfolios || []).map((p) => `${p.name} (#${p.id})`).join(", ") || "None"}
+              Updated portfolios: {(result.touched_portfolios || result.created_portfolios || []).map((p) => `${p.name} (#${p.id})`).join(", ") || "None"}
+            </div>
+            <div className="muted small">
+              Newly created: {(result.created_portfolios || []).map((p) => `${p.name} (#${p.id})`).join(", ") || "None"}
             </div>
           </div>
         ) : null}
@@ -682,10 +842,10 @@ function QuickStocksAddModal({
         ) : null}
 
         <div className="modalFooter" style={{ marginTop: 14 }}>
-          <button className="btn ghost" type="button" onClick={onClose} disabled={busy || previewBusy}>
+          <button className="btn ghost" type="button" onClick={onClose}>
             Cancel
           </button>
-          <button className="btn primary" type="button" onClick={onImport} disabled={!file || !preview || busy || previewBusy}>
+          <button className="btn primary" type="button" onClick={onImport} disabled={!file || busy || previewBusy}>
             {busy ? `Creating... ${Math.round(progress || 0)}%` : "Create Portfolios"}
           </button>
         </div>

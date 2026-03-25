@@ -44,6 +44,12 @@ function asText(v, fallback = "") {
   return fallback;
 }
 
+function normKey(v) {
+  return String(v || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+}
+
 function ModuleLoader({ title = "Loading insights", hint = "Crunching data..." }) {
   return (
     <div className="moduleLoader" role="status" aria-live="polite">
@@ -90,6 +96,10 @@ function portfolioCacheKey(portfolioId) {
   return `portfolioPage:${portfolioId}`;
 }
 
+function recoCacheKey(portfolioId) {
+  return `portfolioReco:${portfolioId}`;
+}
+
 function readPortfolioCache(portfolioId) {
   try {
     const raw = localStorage.getItem(portfolioCacheKey(portfolioId));
@@ -104,6 +114,26 @@ function readPortfolioCache(portfolioId) {
 function writePortfolioCache(portfolioId, payload) {
   try {
     localStorage.setItem(portfolioCacheKey(portfolioId), JSON.stringify({ ...payload, cachedAt: Date.now() }));
+  } catch {}
+}
+
+function readRecoCache(portfolioId, signature = "", ttlMs = 8 * 60 * 1000) {
+  try {
+    const raw = localStorage.getItem(recoCacheKey(portfolioId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    const age = Date.now() - Number(parsed?.cachedAt || 0);
+    if (signature && parsed?.signature !== signature) return null;
+    if (!Array.isArray(parsed?.items) || age > ttlMs) return null;
+    return parsed.items;
+  } catch {
+    return null;
+  }
+}
+
+function writeRecoCache(portfolioId, items, signature = "") {
+  try {
+    localStorage.setItem(recoCacheKey(portfolioId), JSON.stringify({ items, signature, cachedAt: Date.now() }));
   } catch {}
 }
 
@@ -139,6 +169,13 @@ export default function Portfolio() {
   const [tradeSentimentBySymbol, setTradeSentimentBySymbol] = useState({});
   const [tradeSentimentBusySymbol, setTradeSentimentBusySymbol] = useState("");
   const [tradeSentimentError, setTradeSentimentError] = useState("");
+  const [recoOpen, setRecoOpen] = useState(false);
+  const [recoBusy, setRecoBusy] = useState(false);
+  const [recoError, setRecoError] = useState("");
+  const [recommendations, setRecommendations] = useState([]);
+  const [recoAddingSymbol, setRecoAddingSymbol] = useState("");
+  const [recoSuccess, setRecoSuccess] = useState("");
+  const recoWarmSignatureRef = useRef("");
 
   const [clusterOpen, setClusterOpen] = useState(false);
   const clusterAnchorRef = useRef(null);
@@ -149,6 +186,29 @@ export default function Portfolio() {
   const [clusterData, setClusterData] = useState(null);
   const [clusterBusy, setClusterBusy] = useState(false);
   const [clusterError, setClusterError] = useState("");
+
+  const heldSymbolsSet = useMemo(() => {
+    return new Set((holdings || []).map((h) => String(h?.stock?.symbol || "").toUpperCase()).filter(Boolean));
+  }, [holdings]);
+
+  const holdingsSignature = useMemo(() => {
+    return (holdings || [])
+      .map((h) => String(h?.stock?.symbol || "").toUpperCase())
+      .filter(Boolean)
+      .sort()
+      .join("|");
+  }, [holdings]);
+
+  const sectorWeights = useMemo(() => {
+    const map = new Map();
+    for (const h of holdings || []) {
+      const raw = asText(h?.stock?.sector?.name, "");
+      const key = normKey(raw);
+      if (!key) continue;
+      map.set(key, (map.get(key) || 0) + 1);
+    }
+    return map;
+  }, [holdings]);
 
   useEffect(() => {
     setClusterPortfolioIds((prev) => {
@@ -354,10 +414,44 @@ export default function Portfolio() {
   }, [selectedHoldingSymbol]);
 
   useEffect(() => {
+    if (!recoOpen) return;
+    const onKeyDown = (e) => {
+      if (e.key === "Escape") setRecoOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [recoOpen]);
+
+  useEffect(() => {
     if (!tradeSuccess) return;
     const t = setTimeout(() => setTradeSuccess(""), 2200);
     return () => clearTimeout(t);
   }, [tradeSuccess]);
+
+  useEffect(() => {
+    if (!recoSuccess) return;
+    const t = setTimeout(() => setRecoSuccess(""), 2200);
+    return () => clearTimeout(t);
+  }, [recoSuccess]);
+
+  useEffect(() => {
+    if (!recoOpen) return;
+    loadRecommendations(false);
+  }, [recoOpen]);
+
+  useEffect(() => {
+    if (!holdingsSignature) return;
+    const signature = `${portfolioId}:${holdingsSignature}`;
+    if (recoWarmSignatureRef.current === signature) return;
+    recoWarmSignatureRef.current = signature;
+
+    const cached = readRecoCache(portfolioId, signature);
+    if (cached?.length) {
+      setRecommendations(cached);
+      return;
+    }
+    loadRecommendations(false, true);
+  }, [portfolioId, holdingsSignature]);
 
   async function placeTrade() {
     setError("");
@@ -384,6 +478,138 @@ export default function Portfolio() {
       setTradeOpen(false);
     } catch (e) {
       setError(e.message || "Failed");
+    }
+  }
+
+  async function loadRecommendations(force = false, silent = false) {
+    if (!silent && recoBusy) return;
+    if (!force && recommendations.length) return;
+
+    const signature = `${portfolioId}:${holdingsSignature}`;
+    if (!force) {
+      const cached = readRecoCache(portfolioId, signature);
+      if (cached?.length) {
+        setRecommendations(cached);
+        return;
+      }
+    }
+
+    if (!silent) {
+      setRecoBusy(true);
+      setRecoError("");
+    }
+    try {
+      const sectorKeys = Array.from(sectorWeights.keys());
+      const sectorQueries = sectorKeys.slice(0, 3);
+      const marketHints = String(portfolio?.market || "").toUpperCase() === "IN"
+        ? ["NIFTY", "BANK", "IT"]
+        : ["NASDAQ", "TECH", "HEALTH"];
+      const searchQueries = [...sectorQueries, ...marketHints].slice(0, 6);
+
+      const merged = new Map();
+      const searchResults = await Promise.all(
+        searchQueries.map((qWord) => api.searchStocksLive(qWord).catch(() => []))
+      );
+      for (const batch of searchResults) {
+        for (const item of Array.isArray(batch) ? batch : []) {
+          const symbol = String(item?.symbol || "").toUpperCase();
+          if (!symbol || heldSymbolsSet.has(symbol) || merged.has(symbol)) continue;
+          merged.set(symbol, item);
+        }
+      }
+
+      const fallbackSymbolsIn = [
+        "RELIANCE.NS", "HDFCBANK.NS", "ICICIBANK.NS", "SBIN.NS", "LT.NS",
+        "ITC.NS", "TATAMOTORS.NS", "SUNPHARMA.NS", "MARUTI.NS", "BHARTIARTL.NS"
+      ];
+      const fallbackSymbolsUs = ["AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "JPM", "UNH"];
+      const fallbackSymbols = String(portfolio?.market || "").toUpperCase() === "IN" ? fallbackSymbolsIn : fallbackSymbolsUs;
+
+      for (const symbol of fallbackSymbols) {
+        if (!heldSymbolsSet.has(symbol) && !merged.has(symbol)) {
+          merged.set(symbol, { symbol, name: symbol, exchange: symbol.includes(".") ? "NSE/BSE" : "US" });
+        }
+      }
+
+      const candidates = Array.from(merged.values()).slice(0, 18);
+      const preview = await api.stocksPreview(candidates.map((c) => c.symbol));
+      const previewBySymbol = {};
+      for (const p of Array.isArray(preview) ? preview : []) {
+        const symbol = String(p?.symbol || "").toUpperCase();
+        if (symbol) previewBySymbol[symbol] = p;
+      }
+
+      const ranked = candidates
+        .map((item) => {
+          const symbol = String(item?.symbol || "").toUpperCase();
+          const sectorLabel = asText(item?.sector?.name || item?.sector || "", "");
+          const sectorScore = sectorWeights.get(normKey(sectorLabel)) || 0;
+          const p = previewBySymbol[symbol] || {};
+          const pe = toNum(p?.pe);
+          const discount = toNum(p?.discount_from_52w_high_pct);
+          const last = toNum(p?.last_price);
+
+          let score = sectorScore * 30;
+          if (pe !== null && pe >= 8 && pe <= 28) score += 18;
+          if (discount !== null && discount >= 6 && discount <= 35) score += 22;
+          if (last !== null && last > 0) score += 8;
+
+          const reasons = [];
+          if (sectorScore > 0) reasons.push("Sector match");
+          if (pe !== null && pe <= 22) reasons.push("Reasonable P/E");
+          if (discount !== null && discount >= 10) reasons.push("Pullback from 52W high");
+          if (!reasons.length) reasons.push("High liquidity candidate");
+
+          return {
+            symbol,
+            name: asText(item?.name, symbol),
+            exchange: asText(item?.exchange, "--"),
+            sector: sectorLabel || "--",
+            pe,
+            discount,
+            lastPrice: last,
+            score,
+            reasons,
+          };
+        })
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 10);
+
+      setRecommendations(ranked);
+      writeRecoCache(portfolioId, ranked, signature);
+      if (!ranked.length) {
+        if (!silent) setRecoError("No recommendations found for this portfolio yet.");
+      }
+    } catch (e) {
+      if (!silent) setRecoError(e.message || "Failed to load recommendations");
+      setRecommendations([]);
+    } finally {
+      if (!silent) setRecoBusy(false);
+    }
+  }
+
+  async function addRecommendedToPortfolio(item) {
+    const symbol = String(item?.symbol || "").toUpperCase();
+    if (!symbol || recoAddingSymbol) return;
+    setRecoAddingSymbol(symbol);
+    setRecoError("");
+    setRecoSuccess("");
+    try {
+      const price = item?.lastPrice && Number(item.lastPrice) > 0 ? Number(item.lastPrice).toFixed(2) : "1";
+      await api.createTransaction(portfolioId, {
+        stock_symbol: symbol,
+        stock_name: item?.name || symbol,
+        side: "BUY",
+        qty: "1",
+        price,
+      });
+      setRecoSuccess(`${symbol} added to portfolio`);
+      await refresh(true);
+      setRecommendations((prev) => prev.filter((x) => String(x.symbol) !== symbol));
+    } catch (e) {
+      setRecoError(e.message || "Failed to add stock");
+    } finally {
+      setRecoAddingSymbol("");
     }
   }
 
@@ -509,8 +735,16 @@ export default function Portfolio() {
       <main className="grid portfolioGrid">
         <section className="card">
           <div className="portfolioSectionHead">
-            <h3 style={{ margin: 0 }}>Holdings</h3>
+            <div className="portfolioHeadingWrap">
+              <Link className="btn ghost sm iconBtn" to="/dashboard" title="Back to dashboard" aria-label="Back to dashboard">
+                <span aria-hidden="true">←</span>
+              </Link>
+              <h3 style={{ margin: 0 }}>Holdings</h3>
+            </div>
             <div className="portfolioSectionActions">
+              <button className="btn ghost sm" type="button" onClick={() => setRecoOpen(true)}>
+                Recommendations
+              </button>
               <button className="btn primary sm" type="button" onClick={() => setTradeOpen(true)}>
                 + Add trade
               </button>
@@ -861,6 +1095,101 @@ export default function Portfolio() {
                 </>
               );
             })()}
+          </div>
+        </div>
+      ) : null}
+
+      {recoOpen ? (
+        <div className="modalBackdrop" onClick={() => setRecoOpen(false)} role="presentation">
+          <div
+            className="modal recoModal"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Portfolio recommendations"
+          >
+            <div className="modalHeader">
+              <div>
+                <div className="strong">Stock recommendations</div>
+                <div className="muted small">Relevant to your current portfolio mix</div>
+              </div>
+              <div className="modalHeaderActions">
+                <button className="btn ghost sm" type="button" onClick={() => loadRecommendations(true)} disabled={recoBusy}>
+                  {recoBusy ? "Refreshing..." : "Refresh"}
+                </button>
+                <button className="btn ghost sm" type="button" onClick={() => setRecoOpen(false)}>
+                  Close
+                </button>
+              </div>
+            </div>
+
+            {recoError ? <div className="error">{recoError}</div> : null}
+            {recoSuccess ? <div className="success">{recoSuccess}</div> : null}
+
+            {recoBusy ? (
+              <ModuleLoader title="Finding relevant stocks" hint="Scanning sector fit, valuation and pullback opportunities..." />
+            ) : null}
+
+            {!recoBusy && recommendations.length ? (
+              <div className="recoList">
+                {recommendations.map((item) => (
+                  <div className="recoCard" key={item.symbol}>
+                    <div className="recoCardHead">
+                      <div>
+                        <div className="strong mono">{item.symbol}</div>
+                        <div className="muted small">{item.name}</div>
+                      </div>
+                      <div className="recoScore">Fit {Math.round(item.score)}</div>
+                    </div>
+                    <div className="chipRow">
+                      <span className="chip">{item.exchange || "--"}</span>
+                      <span className="chip">{item.sector || "--"}</span>
+                      {item.reasons.map((r) => (
+                        <span className="chip" key={`${item.symbol}:${r}`}>
+                          {r}
+                        </span>
+                      ))}
+                    </div>
+                    <div className="recoMetrics">
+                      <div>
+                        <div className="kpiLabel">Last</div>
+                        <div className="strong">{item.lastPrice === null ? "--" : fmt(item.lastPrice)}</div>
+                      </div>
+                      <div>
+                        <div className="kpiLabel">P/E</div>
+                        <div className="strong">{item.pe === null ? "--" : fmt(item.pe)}</div>
+                      </div>
+                      <div>
+                        <div className="kpiLabel">Discount</div>
+                        <div className={item.discount === null ? "strong" : item.discount >= 10 ? "strong pos" : "strong"}>
+                          {item.discount === null ? "--" : `${fmt(item.discount)}%`}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="recoActions">
+                      <button
+                        className="btn ghost sm"
+                        type="button"
+                        onClick={() => {
+                          setRecoOpen(false);
+                          openStockDetail(item.symbol);
+                        }}
+                      >
+                        Insight
+                      </button>
+                      <button
+                        className={`btn primary sm ${recoAddingSymbol === item.symbol ? "btnBusy" : ""}`}
+                        type="button"
+                        onClick={() => addRecommendedToPortfolio(item)}
+                        disabled={!!recoAddingSymbol}
+                      >
+                        {recoAddingSymbol === item.symbol ? "Adding..." : "Add to portfolio"}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : null}
           </div>
         </div>
       ) : null}
