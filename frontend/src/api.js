@@ -91,7 +91,7 @@ async function apiFetch(path, { method = "GET", body, auth = false } = {}) {
   throw lastErr || new Error("Request failed");
 }
 
-async function apiFetchMultipart(path, { method = "POST", formData, auth = false } = {}) {
+async function apiFetchMultipart(path, { method = "POST", formData, auth = false, signal } = {}) {
   const headers = {};
   if (auth) {
     const token = getToken();
@@ -101,7 +101,8 @@ async function apiFetchMultipart(path, { method = "POST", formData, auth = false
   const res = await fetch(`${API_BASE}${path}`, {
     method,
     headers,
-    body: formData
+    body: formData,
+    signal
   });
 
   const text = await res.text();
@@ -218,21 +219,21 @@ export const api = {
   createPortfolio({ name }) {
     return apiFetch("/api/portfolios/", { method: "POST", body: { name }, auth: true });
   },
-  previewPortfolioCsv({ file, groupBySector = false, baseName = "Imported Portfolio" }) {
+  previewPortfolioCsv({ file, groupBySector = false, baseName, signal } = {}) {
     const fd = new FormData();
     fd.append("file", file);
     fd.append("mode", "preview");
     fd.append("group_by_sector", groupBySector ? "true" : "false");
-    fd.append("base_name", baseName);
-    return apiFetchMultipart("/api/portfolios/import-csv/", { method: "POST", formData: fd, auth: true });
+    if (typeof baseName === "string" && baseName.trim()) fd.append("base_name", baseName.trim());
+    return apiFetchMultipart("/api/portfolios/import-csv/", { method: "POST", formData: fd, auth: true, signal });
   },
-  importPortfolioCsv({ file, groupBySector = false, baseName = "Imported Portfolio" }) {
+  importPortfolioCsv({ file, groupBySector = false, baseName, signal } = {}) {
     const fd = new FormData();
     fd.append("file", file);
     fd.append("mode", "import");
     fd.append("group_by_sector", groupBySector ? "true" : "false");
-    fd.append("base_name", baseName);
-    return apiFetchMultipart("/api/portfolios/import-csv/", { method: "POST", formData: fd, auth: true });
+    if (typeof baseName === "string" && baseName.trim()) fd.append("base_name", baseName.trim());
+    return apiFetchMultipart("/api/portfolios/import-csv/", { method: "POST", formData: fd, auth: true, signal });
   },
   getPortfolio(portfolioId, force = false) {
     const qs = force ? "?force=1" : "";

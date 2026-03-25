@@ -124,6 +124,35 @@ def _looks_like_symbol(value: str) -> bool:
     return bool(text) and all(ch.isalnum() or ch in {".", "-"} for ch in text)
 
 
+def _normalize_name_key(value: str) -> str:
+    text = (value or "").strip().lower()
+    return "".join(ch for ch in text if ch.isalnum())
+
+
+def _portfolio_match_keys(label: str) -> list[str]:
+    """
+    Build multiple matching keys so sector labels can map to existing compact portfolio names
+    (for example: "Information Technology" -> "it", "tech", "technology").
+    """
+    base = _normalize_name_key(label)
+    keys = {base}
+
+    if "informationtechnology" in base or base in {"technology", "tech"}:
+        keys.update({"it", "tech", "technology", "informationtechnology"})
+    if "healthcare" in base or "pharma" in base:
+        keys.update({"healthcare", "pharma", "pharmaceutical", "pharmaceuticals"})
+    if "financialservices" in base or "bank" in base or "finance" in base:
+        keys.update({"financialservices", "finance", "banking", "bank"})
+    if "consumerdurables" in base or "fmcg" in base or "consumer" in base:
+        keys.update({"consumerdurables", "consumer", "fmcg"})
+    if "telecommunication" in base or "telecom" in base:
+        keys.update({"telecom", "telecommunication"})
+    if "metals" in base or "mining" in base:
+        keys.update({"metals", "mining", "metalsmining"})
+
+    return [k for k in keys if k]
+
+
 def _parse_import_csv(uploaded_file) -> list[dict]:
     raw = uploaded_file.read()
     text = ""
@@ -851,7 +880,8 @@ class PortfolioCsvImportView(APIView):
             return Response({"detail": "mode must be 'preview' or 'import'."}, status=status.HTTP_400_BAD_REQUEST)
 
         group_by_sector = str(request.data.get("group_by_sector", "false")).strip().lower() in {"1", "true", "yes", "on"}
-        base_name = (request.data.get("base_name") or "Imported Portfolio").strip() or "Imported Portfolio"
+        requested_base_name = (request.data.get("base_name") or "").strip()
+        base_name = requested_base_name or f"Imported Portfolio {timezone.localtime().strftime('%Y-%m-%d %H:%M')}"
 
         rows = _parse_import_csv(uploaded)
         if not rows:
@@ -900,7 +930,8 @@ class PortfolioCsvImportView(APIView):
             if not group_by_sector:
                 return base_name
             bucket = (sector_name or "").strip() or "Uncategorized"
-            return f"{base_name} - {bucket}"
+            # Grouped mode is sector-first to keep dashboards clean and reusable.
+            return bucket
 
         for idx, row in enumerate(rows, start=1):
             raw_symbol = _csv_pick(row, symbol_keys).upper()
@@ -984,9 +1015,26 @@ class PortfolioCsvImportView(APIView):
             )
 
         tentative_counts: dict[str, int] = {}
+        existing_lookup: dict[str, Portfolio] = {}
+        existing_by_id: dict[int, Portfolio] = {}
+        for p in Portfolio.objects.filter(user=request.user):
+            existing_by_id[p.id] = p
+            for k in _portfolio_match_keys(p.name):
+                existing_lookup[k] = p
+
+        # Annotate preview rows with where they will land: existing portfolio vs newly created portfolio.
         for item in resolved_rows:
-            pname = item["portfolio_name"]
-            tentative_counts[pname] = tentative_counts.get(pname, 0) + 1
+            raw_pname = item["portfolio_name"]
+            matched = None
+            for lookup_key in _portfolio_match_keys(raw_pname):
+                if lookup_key in existing_lookup:
+                    matched = existing_lookup[lookup_key]
+                    break
+            target_name = matched.name if matched is not None else raw_pname
+            item["portfolio_target_name"] = target_name
+            item["portfolio_target_existing"] = matched is not None
+            item["portfolio_target_id"] = matched.id if matched is not None else None
+            tentative_counts[target_name] = tentative_counts.get(target_name, 0) + 1
         tentative_portfolios = [{"name": k, "stock_count": v} for k, v in tentative_counts.items()]
 
         if mode == "preview":
@@ -1016,6 +1064,7 @@ class PortfolioCsvImportView(APIView):
             )
 
         created_portfolios: dict[str, Portfolio] = {}
+        newly_created_portfolios: dict[str, Portfolio] = {}
         portfolio_stock_counts: dict[int, int] = {}
         processed = 0
         import_log: list[dict] = []
@@ -1028,14 +1077,29 @@ class PortfolioCsvImportView(APIView):
                 price = Decimal(item["price"])
                 exchange_hint = item.get("exchange") or ""
                 sector_name = item.get("sector") or ""
-                pname = item["portfolio_name"]
+                pname = item.get("portfolio_target_name") or item["portfolio_name"]
 
-                key = pname.lower()
+                key = _normalize_name_key(pname)
                 portfolio = created_portfolios.get(key)
                 if portfolio is None:
-                    portfolio = Portfolio.objects.create(user=request.user, name=pname)
+                    # Reuse existing portfolio when name/sector matches.
+                    matched = existing_by_id.get(item.get("portfolio_target_id")) if item.get("portfolio_target_id") else None
+                    if matched is None:
+                        for lookup_key in _portfolio_match_keys(pname):
+                            if lookup_key in existing_lookup:
+                                matched = existing_lookup[lookup_key]
+                                break
+
+                    if matched is not None:
+                        portfolio = matched
+                    else:
+                        portfolio = Portfolio.objects.create(user=request.user, name=pname)
+                        newly_created_portfolios[key] = portfolio
+                        for k in _portfolio_match_keys(portfolio.name):
+                            existing_lookup[k] = portfolio
+
                     created_portfolios[key] = portfolio
-                    portfolio_stock_counts[portfolio.id] = 0
+                    portfolio_stock_counts.setdefault(portfolio.id, 0)
 
                 stock = _get_or_create_stock(symbol, name_hint=name, exchange_hint=exchange_hint)
                 if sector_name:
@@ -1076,6 +1140,11 @@ class PortfolioCsvImportView(APIView):
 
         out_portfolios = [
             {"id": p.id, "name": p.name, "stock_count": portfolio_stock_counts.get(p.id, 0)}
+            for p in newly_created_portfolios.values()
+        ]
+
+        touched_portfolios = [
+            {"id": p.id, "name": p.name, "stock_count": portfolio_stock_counts.get(p.id, 0)}
             for p in created_portfolios.values()
         ]
 
@@ -1104,6 +1173,7 @@ class PortfolioCsvImportView(APIView):
                 "transactions_created": processed,
                 "grouped_by_sector": group_by_sector,
                 "created_portfolios": out_portfolios,
+                "touched_portfolios": touched_portfolios,
                 "import_log": import_log[:120],
                 "skipped_preview": skipped[:50],
             },
