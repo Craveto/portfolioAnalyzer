@@ -4,7 +4,8 @@
     "exclude": [
       "/assets/*",
       "/images/*",
-      "/favicon.ico"
+      "/favicon.ico",
+      "/favicon.svg"
     ]
   },
   "routes": [

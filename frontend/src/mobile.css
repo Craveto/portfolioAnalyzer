@@ -13,6 +13,8 @@
   .header {
     padding: 10px 10px;
     gap: 12px;
+    align-items: center;
+    min-height: 60px;
   }
 
   .brandSub {
@@ -25,6 +27,36 @@
 
   .navActions {
     gap: 8px;
+  }
+
+  .navActions {
+    display: none;
+  }
+
+  .navStatusChips {
+    display: none !important;
+  }
+
+  .navActions .btn.danger,
+  .navActions .btn.danger.sm {
+    display: none;
+  }
+
+  .brandMeta {
+    min-width: 0;
+  }
+
+  .brandTitle {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: min(44vw, 240px);
+  }
+
+  .navRight {
+    gap: 8px;
+    min-width: 0;
+    margin-left: auto;
   }
 
   .themeBtn,
@@ -40,6 +72,81 @@
 
   .themeBtnLabel {
     font-size: 11px;
+  }
+
+  #portfoliosSection .listItemRow {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  #portfoliosSection .listItemRow > div:last-child {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  #portfoliosSection .listItemRow > div:last-child .btn {
+    flex: 1 1 0;
+    justify-content: center;
+  }
+
+  #createPortfolioSection .btn.primary {
+    width: 100%;
+    justify-content: center;
+  }
+
+  #createPortfolioSection .portfolioTemplates {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    padding-bottom: 4px;
+  }
+
+  #createPortfolioSection .portfolioTemplates .chip {
+    white-space: nowrap;
+  }
+
+  #marketSection .sectionRow {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  #marketSection .sectionRow > div:last-child {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  #marketSection .marketGlanceGrid {
+    grid-template-columns: 1fr;
+  }
+
+  #watchlistPreviewSection .table,
+  #recentActivitySection .table {
+    overflow-x: auto;
+  }
+
+  #watchlistPreviewSection .row,
+  #recentActivitySection .row {
+    min-width: 560px;
+  }
+
+  .mobileCreatePortfolioFab {
+    position: fixed;
+    right: 12px;
+    bottom: calc(86px + env(safe-area-inset-bottom));
+    z-index: 940;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 46px;
+    padding: 0 14px;
+    border-radius: 14px;
+    border: 1px solid rgba(140, 225, 255, 0.42);
+    background: linear-gradient(135deg, rgba(88, 164, 255, 0.92), rgba(53, 95, 214, 0.94));
+    color: #eaf4ff;
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: 0.2px;
+    box-shadow: 0 16px 34px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(255, 255, 255, 0.12) inset;
   }
 }
 
@@ -87,7 +194,12 @@
   }
 
   .navMobile .navStatusChips {
-    display: flex !important;
+    display: none !important;
+  }
+
+  .navMobileActionButtons .btn.danger,
+  .navMobileActionButtons .btn.danger.sm {
+    display: inline-flex !important;
   }
 
   .navMobileHead {
@@ -199,9 +311,13 @@
 
 @media (max-width: 520px) {
   .logo {
-    width: 36px;
-    height: 36px;
+    width: 38px;
+    height: 38px;
     border-radius: 12px;
+  }
+
+  .brandTitle {
+    max-width: min(52vw, 180px);
   }
 
   .landingH1 {
@@ -220,6 +336,18 @@
 
   .table {
     border-radius: 12px;
+  }
+
+  #watchlistPreviewSection .row,
+  #recentActivitySection .row {
+    min-width: 0;
+  }
+
+  .mobileCreatePortfolioFab {
+    left: 10px;
+    right: 10px;
+    width: auto;
+    justify-content: center;
   }
 
   .holdingsTable {
@@ -301,5 +429,64 @@
 
   .popoverBody {
     max-height: min(70svh, 560px);
+  }
+
+  .edachiFab {
+    right: 10px;
+    bottom: calc(84px + env(safe-area-inset-bottom));
+    width: 52px;
+    height: 52px;
+    min-width: 52px;
+    padding: 0;
+  }
+
+  .edachiFabHint {
+    display: none;
+  }
+
+  .edachiBackdrop {
+    padding: 8px;
+    align-items: flex-end;
+    justify-content: center;
+  }
+
+  .edachiPanel {
+    width: 100%;
+    max-height: min(88svh, 820px);
+    border-radius: 18px;
+    padding: 10px;
+  }
+
+  .edachiHead {
+    gap: 8px;
+  }
+
+  .edachiHeadActions {
+    gap: 6px;
+  }
+
+  .edachiCloseBtn {
+    width: 28px;
+    height: 28px;
+  }
+
+  .edachiModePill {
+    display: none;
+  }
+
+  .edachiBody {
+    min-height: 220px;
+  }
+
+  .edachiSuggestions {
+    gap: 8px;
+  }
+
+  .edachiComposer {
+    grid-template-columns: 1fr;
+  }
+
+  .edachiSend {
+    width: 100%;
   }
 }

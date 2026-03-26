@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { api, clearTokens } from "../api.js";
 import { Link, useNavigate } from "react-router-dom";
 import NavBar from "../components/NavBar.jsx";
@@ -53,12 +53,50 @@ export default function Dashboard() {
   const [quickImportResult, setQuickImportResult] = useState(null);
   const [quickProgress, setQuickProgress] = useState(0);
   const [quickPhase, setQuickPhase] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [portfolioQuery, setPortfolioQuery] = useState("");
+  const [portfolioSort, setPortfolioSort] = useState("newest");
+  const [portfolioMarketFilter, setPortfolioMarketFilter] = useState("ALL");
   const progressTimerRef = useRef(null);
   const quickPreviewAbortRef = useRef(null);
   const quickImportAbortRef = useRef(null);
   const portfolioRowMeasureRef = useRef(null);
   const [portfolioViewportHeight, setPortfolioViewportHeight] = useState(null);
   const MAX_VISIBLE_PORTFOLIOS = 5;
+  const templatePortfolioNames = ["Growth", "Dividend", "Long Term", "Swing Trades", "Defensive"];
+
+  const trimmedName = (name || "").trim();
+  const duplicateExists = useMemo(
+    () => portfolios.some((p) => String(p?.name || "").trim().toLowerCase() === trimmedName.toLowerCase()),
+    [portfolios, trimmedName]
+  );
+  const canCreatePortfolio = trimmedName.length >= 3 && !duplicateExists;
+
+  const marketOptions = useMemo(() => {
+    const set = new Set(["ALL"]);
+    for (const p of portfolios) {
+      const m = String(p?.market || "").trim().toUpperCase();
+      if (m) set.add(m);
+    }
+    return Array.from(set);
+  }, [portfolios]);
+
+  const filteredPortfolios = useMemo(() => {
+    const q = portfolioQuery.trim().toLowerCase();
+    let next = portfolios.filter((p) => {
+      if (portfolioMarketFilter !== "ALL" && String(p?.market || "").toUpperCase() !== portfolioMarketFilter) return false;
+      if (!q) return true;
+      const nameText = String(p?.name || "").toLowerCase();
+      const idText = String(p?.id || "");
+      return nameText.includes(q) || idText.includes(q);
+    });
+
+    if (portfolioSort === "name_asc") next = [...next].sort((a, b) => String(a?.name || "").localeCompare(String(b?.name || "")));
+    else if (portfolioSort === "name_desc") next = [...next].sort((a, b) => String(b?.name || "").localeCompare(String(a?.name || "")));
+    else if (portfolioSort === "oldest") next = [...next].sort((a, b) => Number(a?.id || 0) - Number(b?.id || 0));
+    else next = [...next].sort((a, b) => Number(b?.id || 0) - Number(a?.id || 0));
+    return next;
+  }, [portfolios, portfolioMarketFilter, portfolioQuery, portfolioSort]);
 
   useEffect(() => {
     refreshSummary(false);
@@ -113,6 +151,13 @@ export default function Dashboard() {
     stopProgress(0);
   }
 
+  function openCreatePortfolioSection() {
+    const el = document.getElementById("createPortfolioSection");
+    if (el?.scrollIntoView) {
+      el.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }
+
   function getQuickImportBaseName() {
     if (quickImportNamingMode !== "custom") return undefined;
     const trimmed = (quickImportBaseName || "").trim();
@@ -120,7 +165,7 @@ export default function Dashboard() {
   }
 
   useEffect(() => {
-    if (portfolios.length <= MAX_VISIBLE_PORTFOLIOS) {
+    if (filteredPortfolios.length <= MAX_VISIBLE_PORTFOLIOS) {
       setPortfolioViewportHeight(null);
       return;
     }
@@ -129,7 +174,7 @@ export default function Dashboard() {
     // 5 rows + 4 gaps (10px each) + tiny breathing room for border.
     const h = Math.round((rowH * MAX_VISIBLE_PORTFOLIOS) + (4 * 10) + 2);
     setPortfolioViewportHeight(h);
-  }, [portfolios.length]);
+  }, [filteredPortfolios.length]);
 
   async function refreshSummary(force = false) {
     try {
@@ -152,9 +197,18 @@ export default function Dashboard() {
   }
 
   async function create() {
+    const nextName = (name || "").trim();
+    if (nextName.length < 3) {
+      setError("Portfolio name should be at least 3 characters.");
+      return;
+    }
+    if (duplicateExists) {
+      setError("A portfolio with this name already exists.");
+      return;
+    }
     setError("");
     try {
-      const p = await api.createPortfolio({ name });
+      const p = await api.createPortfolio({ name: nextName });
       setPortfolios((prev) => {
         const next = [p, ...prev];
         setSummary((s) => {
@@ -164,6 +218,7 @@ export default function Dashboard() {
         });
         return next;
       });
+      setName("My Portfolio");
       nav(`/portfolio/${p.id}`);
     } catch (e) {
       setError(e.message || "Failed to create portfolio");
@@ -175,9 +230,14 @@ export default function Dashboard() {
     nav("/");
   }
 
-  async function deletePortfolio(id) {
-    const ok = window.confirm("Delete this portfolio? This will remove holdings and transactions.");
-    if (!ok) return;
+  function requestDeletePortfolio(portfolio) {
+    if (!portfolio?.id) return;
+    setDeleteTarget({ id: portfolio.id, name: portfolio.name || `Portfolio #${portfolio.id}` });
+  }
+
+  async function confirmDeletePortfolio() {
+    const id = Number(deleteTarget?.id);
+    if (!id) return;
     setBusyId(id);
     setError("");
     try {
@@ -191,6 +251,7 @@ export default function Dashboard() {
         });
         return next;
       });
+      setDeleteTarget(null);
     } catch (e) {
       setError(e.message || "Failed to delete portfolio");
     } finally {
@@ -285,24 +346,49 @@ export default function Dashboard() {
         <section className="card" id="portfoliosSection">
           <div className="portfolioSectionHead">
             <h3 style={{ margin: 0 }}>Your Portfolios</h3>
-            {portfolios.length > MAX_VISIBLE_PORTFOLIOS ? (
+            {filteredPortfolios.length > MAX_VISIBLE_PORTFOLIOS ? (
               <div className="muted small">
-                Showing {MAX_VISIBLE_PORTFOLIOS} of {portfolios.length}
+                Showing {Math.min(MAX_VISIBLE_PORTFOLIOS, filteredPortfolios.length)} of {filteredPortfolios.length}
               </div>
             ) : null}
           </div>
+          <div className="portfolioTools">
+            <input
+              className="input"
+              placeholder="Search by name or #id"
+              value={portfolioQuery}
+              onChange={(e) => setPortfolioQuery(e.target.value)}
+              aria-label="Search portfolios"
+            />
+            <select className="input" value={portfolioSort} onChange={(e) => setPortfolioSort(e.target.value)} aria-label="Sort portfolios">
+              <option value="newest">Newest first</option>
+              <option value="oldest">Oldest first</option>
+              <option value="name_asc">Name A-Z</option>
+              <option value="name_desc">Name Z-A</option>
+            </select>
+            <select className="input" value={portfolioMarketFilter} onChange={(e) => setPortfolioMarketFilter(e.target.value)} aria-label="Filter by market">
+              {marketOptions.map((m) => (
+                <option key={m} value={m}>
+                  {m === "ALL" ? "All markets" : m}
+                </option>
+              ))}
+            </select>
+          </div>
           {error ? <div className="error">{error}</div> : null}
           {portfolios.length === 0 ? <div className="muted">No portfolios yet. Create your first one.</div> : null}
+          {portfolios.length > 0 && filteredPortfolios.length === 0 ? (
+            <div className="muted">No matching portfolios. Try another search or filter.</div>
+          ) : null}
           <div
-            className={`list portfoliosViewport ${portfolios.length > MAX_VISIBLE_PORTFOLIOS ? "scrollable" : ""}`}
-            style={portfolios.length > MAX_VISIBLE_PORTFOLIOS && portfolioViewportHeight ? { maxHeight: `${portfolioViewportHeight}px` } : undefined}
+            className={`list portfoliosViewport ${filteredPortfolios.length > MAX_VISIBLE_PORTFOLIOS ? "scrollable" : ""}`}
+            style={filteredPortfolios.length > MAX_VISIBLE_PORTFOLIOS && portfolioViewportHeight ? { maxHeight: `${portfolioViewportHeight}px` } : undefined}
           >
-            {portfolios.map((p, idx) => (
+            {filteredPortfolios.map((p, idx) => (
               <div className="listItemRow" key={p.id} ref={idx === 0 ? portfolioRowMeasureRef : null}>
                 <Link className="listItem" to={`/portfolio/${p.id}`}>
                   <div className="strong">{p.name}</div>
                   <div className="muted small" style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                    <span>Market: {p.market}</span>
+                    <span className="marketTag">Market: {p.market}</span>
                     <span className="mono">#{p.id}</span>
                   </div>
                 </Link>
@@ -310,7 +396,7 @@ export default function Dashboard() {
                   <Link className="btn sm" to={`/analysis/${p.id}`} title="Open analysis">
                     Analysis
                   </Link>
-                  <button className="btn danger sm" onClick={() => deletePortfolio(p.id)} disabled={busyId === p.id} title="Delete portfolio">
+                  <button className="btn danger sm" onClick={() => requestDeletePortfolio(p)} disabled={busyId === p.id} title="Delete portfolio">
                     {busyId === p.id ? "..." : "Delete"}
                   </button>
                 </div>
@@ -323,11 +409,33 @@ export default function Dashboard() {
           <h3>Create Portfolio</h3>
           <label className="label">
             Name
-            <input className="input" value={name} onChange={(e) => setName(e.target.value)} />
+            <input
+              className="input"
+              value={name}
+              maxLength={120}
+              placeholder="Enter portfolio name"
+              onChange={(e) => setName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  create();
+                }
+              }}
+            />
           </label>
-          <button className="btn primary" onClick={create}>
+          <div className="portfolioTemplates">
+            {templatePortfolioNames.map((tpl) => (
+              <button key={tpl} className="chip" type="button" onClick={() => setName(tpl)}>
+                {tpl}
+              </button>
+            ))}
+          </div>
+          <button className="btn primary" onClick={create} disabled={!canCreatePortfolio}>
             Create
           </button>
+          <div className="muted small" style={{ marginTop: 8 }}>
+            {duplicateExists ? "Name already exists. Pick another one." : `${trimmedName.length}/120 characters`}
+          </div>
           <div className="muted small" style={{ marginTop: 10 }}>
             Tip: Keep separate portfolios for sectors (IT, Banking) to make EDA comparisons easy.
           </div>
@@ -466,6 +574,10 @@ export default function Dashboard() {
           {(summary?.recent_transactions || []).length === 0 ? <div className="muted" style={{ marginTop: 10 }}>No transactions yet.</div> : null}
         </section>
       </main>
+
+      <button className="mobileCreatePortfolioFab" type="button" onClick={openCreatePortfolioSection} aria-label="Add portfolio">
+        + Add Portfolio
+      </button>
 
       <Footer />
 
@@ -611,6 +723,49 @@ export default function Dashboard() {
           }
         }}
       />
+
+      <DeletePortfolioModal
+        open={Boolean(deleteTarget)}
+        portfolioName={deleteTarget?.name || ""}
+        busy={busyId === Number(deleteTarget?.id || 0)}
+        onCancel={() => {
+          if (busyId) return;
+          setDeleteTarget(null);
+        }}
+        onConfirm={confirmDeletePortfolio}
+      />
+    </div>
+  );
+}
+
+function DeletePortfolioModal({ open, portfolioName, busy, onCancel, onConfirm }) {
+  if (!open) return null;
+  return (
+    <div className="modalBackdrop" role="dialog" aria-modal="true" aria-label="Delete portfolio confirmation">
+      <div className="modal" style={{ maxWidth: 520 }}>
+        <div className="modalHeader">
+          <h2>Delete Portfolio</h2>
+          <button className="btn ghost" type="button" onClick={onCancel} disabled={busy}>
+            x
+          </button>
+        </div>
+
+        <div className="muted" style={{ marginTop: 8 }}>
+          Are you sure you want to delete <span className="strong mono">{portfolioName}</span>?
+        </div>
+        <div className="muted small" style={{ marginTop: 6 }}>
+          This permanently removes holdings and transactions for this portfolio.
+        </div>
+
+        <div className="modalFooter" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+          <button className="btn ghost" type="button" onClick={onCancel} disabled={busy}>
+            Cancel
+          </button>
+          <button className="btn danger" type="button" onClick={onConfirm} disabled={busy}>
+            {busy ? "Deleting..." : "Delete Portfolio"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

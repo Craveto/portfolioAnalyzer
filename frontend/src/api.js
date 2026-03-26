@@ -15,6 +15,8 @@ export function setToken(token) {
 
 export function clearTokens() {
   localStorage.removeItem("authToken");
+  localStorage.removeItem("edachi_bootstrap_cache_v1_guest");
+  localStorage.removeItem("edachi_bootstrap_cache_v1_user");
 }
 
 function sleep(ms) {
@@ -293,6 +295,27 @@ export const api = {
     const ids = Array.isArray(portfolioIds) ? portfolioIds.filter(Boolean) : [];
     const qs = `?portfolio_ids=${encodeURIComponent(ids.join(","))}&k=${encodeURIComponent(String(k))}`;
     return apiFetch(`/api/analysis/cluster/${qs}`, { auth: true });
+  },
+  edachiBootstrap() {
+    return apiFetch("/api/chat/bootstrap/", { auth: Boolean(getToken()) });
+  },
+  edachiAsk(question, options = {}) {
+    const recentMessages = Array.isArray(options?.recent_messages) ? options.recent_messages : [];
+    return apiFetch("/api/chat/ask/", {
+      method: "POST",
+      body: { question, recent_messages: recentMessages.slice(-6) },
+      auth: Boolean(getToken()),
+    });
+  },
+  edachiReset() {
+    return apiFetch("/api/chat/reset/", { method: "POST", auth: Boolean(getToken()) });
+  },
+  edachiFeedback({ question, answer, helpful, source = "" }) {
+    return apiFetch("/api/chat/feedback/", {
+      method: "POST",
+      body: { question, answer, helpful: Boolean(helpful), source },
+      auth: Boolean(getToken()),
+    });
   },
   async clusterCsv({ portfolioIds = [], k = 3 } = {}) {
     const ids = Array.isArray(portfolioIds) ? portfolioIds.filter(Boolean) : [];
