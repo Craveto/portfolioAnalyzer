@@ -2,7 +2,8 @@
 Now you can play with this webapp on 
 https://thankful-forest-0dddffc00.2.azurestaticapps.net/
 
-<img width="1510" height="727" alt="image" src="https://github.com/user-attachments/assets/2aabbf4d-bcc5-432f-807f-5332452406f7" />
+<img width="1504" height="924" alt="image" src="https://github.com/user-attachments/assets/69e36502-abb2-488c-a96e-cfd563249f14" />
+
 
 
 
