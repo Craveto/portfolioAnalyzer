@@ -132,6 +132,7 @@ export default function NavBar({
   const [themeOpen, setThemeOpen] = useState(false);
   const [themeAnchor, setThemeAnchor] = useState(null);
   const [tick, setTick] = useState(Date.now());
+  const [statusVisible, setStatusVisible] = useState(true);
   const [theme, setTheme] = useState(() => {
     try {
       const saved = localStorage.getItem(THEME_KEY);
@@ -254,7 +255,25 @@ export default function NavBar({
       <header className={cx("header appHeader", className)}>
         <div className="brand">
           <Link className="brandLink" to={homeTo} aria-label="Home">
-            <div className="logo">EDA</div>
+            <div className="logo" aria-hidden="true">
+              <svg className="logoSvg" viewBox="0 0 64 64" role="img">
+                <defs>
+                  <linearGradient id="edaLogoBg" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stopColor="#9bd6ff" />
+                    <stop offset="45%" stopColor="#5fa9ff" />
+                    <stop offset="100%" stopColor="#2945c7" />
+                  </linearGradient>
+                  <linearGradient id="edaLogoGlyph" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stopColor="#eef7ff" />
+                    <stop offset="100%" stopColor="#d6e8ff" />
+                  </linearGradient>
+                </defs>
+                <rect x="3" y="3" width="58" height="58" rx="18" fill="url(#edaLogoBg)" />
+                <rect x="3" y="3" width="58" height="58" rx="18" fill="none" stroke="rgba(255,255,255,0.36)" />
+                <path d="M20 22h20v5H25v7h13v5H25v7h15v5H20V22Z" fill="url(#edaLogoGlyph)" />
+                <path d="M45 22h5v29h-5zM45 34h8" stroke="#d8e8ff" strokeWidth="3" strokeLinecap="round" />
+              </svg>
+            </div>
           </Link>
           {showBrandMeta ? (
             <div className="brandMeta">
@@ -285,15 +304,26 @@ export default function NavBar({
             </nav>
           ) : null}
 
-          <div className="navStatusChips" aria-label="Live status">
-            <span className={marketStatus.india.open ? "statusChip open" : "statusChip closed"}>
-              {marketStatus.india.label} {marketStatus.india.open ? "Open" : "Closed"}
-            </span>
-            <span className={marketStatus.us.open ? "statusChip open" : "statusChip closed"}>
-              {marketStatus.us.label} {marketStatus.us.open ? "Open" : "Closed"}
-            </span>
-            <span className="statusChip sync">Sync {marketStatus.syncAt}</span>
-          </div>
+          {statusVisible ? (
+            <div className="navStatusChips" aria-label="Live status">
+              <span className={marketStatus.india.open ? "statusChip open" : "statusChip closed"}>
+                {marketStatus.india.label} {marketStatus.india.open ? "Open" : "Closed"}
+              </span>
+              <span className={marketStatus.us.open ? "statusChip open" : "statusChip closed"}>
+                {marketStatus.us.label} {marketStatus.us.open ? "Open" : "Closed"}
+              </span>
+              <span className="statusChip sync">Sync {marketStatus.syncAt}</span>
+              <button
+                className="navStatusCloseBtn"
+                type="button"
+                aria-label="Hide live status"
+                title="Hide live status"
+                onClick={() => setStatusVisible(false)}
+              >
+                ×
+              </button>
+            </div>
+          ) : null}
 
           {actions || showThemeToggle ? <div className="navActions">{renderThemeBtn()}{actions}</div> : null}
 

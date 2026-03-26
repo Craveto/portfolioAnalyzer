@@ -284,6 +284,7 @@ export default function Analysis() {
   const [reportBusy, setReportBusy] = useState("");
   const [showVerdictReason, setShowVerdictReason] = useState(false);
   const [reportError, setReportError] = useState("");
+  const [peVisibleRows, setPeVisibleRows] = useState(8);
 
   useEffect(() => {
     let alive = true;
@@ -411,6 +412,9 @@ export default function Analysis() {
   }, [selectedSymbol]);
 
   const holdings = data?.holdings || [];
+  const peRowsMin = 4;
+  const peRowsMax = Math.max(6, Math.min(24, holdings.length || 6));
+  const peViewportMaxHeight = Math.max(240, Math.min(720, peVisibleRows * 88));
   const maxPE = useMemo(() => {
     const pes = holdings.map((h) => (h.pe === null || h.pe === undefined ? null : Number(h.pe))).filter((x) => x !== null && !Number.isNaN(x));
     return pes.length ? Math.max(...pes) : 0;
@@ -816,25 +820,44 @@ export default function Analysis() {
           {loading ? <div className="skeleton h200" /> : null}
           {holdings.length === 0 && !loading ? <div className="muted">No holdings yet.</div> : null}
 
-          <div className="barList">
-            {holdings.map((h) => {
-              const pe = h.pe === null || h.pe === undefined ? null : Number(h.pe);
-              const pctWidth = pe !== null && maxPE ? Math.max(2, Math.min(100, (pe / maxPE) * 100)) : 2;
-              return (
-                <div className="barRow" key={h.symbol}>
-                  <div className="barLeft">
-                    <div className="strong mono">{h.symbol}</div>
-                    <div className="muted small">{h.name}</div>
-                  </div>
-                  <div className="barMid">
-                    <div className="barTrack">
-                      <div className="barFill" style={{ width: `${pctWidth}%` }} />
+          {holdings.length > 0 ? (
+            <div className="barListControls">
+              <label className="barSliderLabel">
+                Rows visible: <span className="mono">{Math.min(peVisibleRows, holdings.length)}</span>
+              </label>
+              <input
+                className="barSlider"
+                type="range"
+                min={peRowsMin}
+                max={peRowsMax}
+                value={Math.min(peVisibleRows, peRowsMax)}
+                onChange={(e) => setPeVisibleRows(Number(e.target.value) || peRowsMin)}
+                aria-label="Rows visible in P/E by holding"
+              />
+            </div>
+          ) : null}
+
+          <div className="barListViewport" style={{ maxHeight: `${peViewportMaxHeight}px` }}>
+            <div className="barList">
+              {holdings.map((h) => {
+                const pe = h.pe === null || h.pe === undefined ? null : Number(h.pe);
+                const pctWidth = pe !== null && maxPE ? Math.max(2, Math.min(100, (pe / maxPE) * 100)) : 2;
+                return (
+                  <div className="barRow" key={h.symbol}>
+                    <div className="barLeft">
+                      <div className="strong mono">{h.symbol}</div>
+                      <div className="muted small">{h.name}</div>
                     </div>
+                    <div className="barMid">
+                      <div className="barTrack">
+                        <div className="barFill" style={{ width: `${pctWidth}%` }} />
+                      </div>
+                    </div>
+                    <div className="barRight mono">{pe === null || Number.isNaN(pe) ? "--" : fmt(pe)}</div>
                   </div>
-                  <div className="barRight mono">{pe === null || Number.isNaN(pe) ? "--" : fmt(pe)}</div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
         </section>
 

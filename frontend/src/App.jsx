@@ -7,6 +7,7 @@ import Analysis from "./pages/Analysis.jsx";
 import Chart from "./pages/Chart.jsx";
 import Account from "./pages/Account.jsx";
 import { api, getToken } from "./api.js";
+import EdachiAssistant from "./components/EdachiAssistant.jsx";
 
 const DASHBOARD_CACHE_KEY = "dashboard_summary_cache_v1";
 const ACCOUNT_CACHE_KEY = "account_page_cache_v1";
@@ -127,6 +128,12 @@ export default function App() {
           api.listAlerts().catch(() => []),
         ]);
 
+        api.edachiBootstrap().then((d) => {
+          try {
+            localStorage.setItem("edachi_bootstrap_cache_v1_user", JSON.stringify({ savedAt: Date.now(), data: d || {} }));
+          } catch {}
+        }).catch(() => {});
+
         if (!alive) return;
 
         if (summary) saveJson(DASHBOARD_CACHE_KEY, summary);
@@ -235,6 +242,7 @@ export default function App() {
         />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      <EdachiAssistant />
     </>
   );
 }

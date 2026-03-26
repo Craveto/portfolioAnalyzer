@@ -4,6 +4,48 @@
   margin-top: 10px;
 }
 
+.barListControls {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.barSliderLabel {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.barSlider {
+  width: min(320px, 100%);
+  accent-color: color-mix(in srgb, var(--accent1) 68%, #8fd9ff);
+}
+
+.barListViewport {
+  margin-top: 10px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 6px;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--accent1) 62%, rgba(255, 255, 255, 0.2)) rgba(255, 255, 255, 0.05);
+}
+
+.barListViewport::-webkit-scrollbar {
+  width: 10px;
+}
+
+.barListViewport::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 999px;
+}
+
+.barListViewport::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  border: 2px solid rgba(10, 16, 30, 0.85);
+  background: linear-gradient(180deg, rgba(123, 182, 255, 0.88), rgba(162, 208, 255, 0.72));
+}
+
 .barRow {
   display: grid;
   grid-template-columns: 1.4fr 2.2fr 0.5fr;

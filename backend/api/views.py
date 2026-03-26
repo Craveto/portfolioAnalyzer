@@ -10,6 +10,7 @@ from decimal import Decimal
 
 from django.contrib.auth import authenticate
 from django.contrib.auth.models import User
+from django.core.cache import cache
 from django.db import close_old_connections
 from django.db import transaction as db_transaction
 from django.db.models import Q
@@ -21,6 +22,17 @@ from rest_framework.views import APIView
 
 from accounts.models import UserProfile
 from .models import CachedPayload
+from .edachi import (
+    answer_public_question,
+    answer_question,
+    build_context,
+    build_guest_context,
+    build_quick_brief,
+    clear_session,
+    get_or_init_session,
+    save_feedback,
+    save_guest_feedback,
+)
 from portfolio.models import Holding, Portfolio, Sector, Stock, Transaction
 from watchlist.models import PriceAlert, WatchlistItem
 
@@ -59,6 +71,37 @@ from .yf_client import (
 
 _refresh_flags: dict[str, bool] = {}
 _refresh_lock = threading.Lock()
+
+
+def _client_ip(request) -> str:
+    xff = str(request.META.get("HTTP_X_FORWARDED_FOR") or "").strip()
+    if xff:
+        return xff.split(",")[0].strip()
+    return str(request.META.get("REMOTE_ADDR") or "unknown")
+
+
+def _edachi_guest_limit(request) -> tuple[bool, dict]:
+    # Guest policy: lower throughput than logged-in users.
+    per_min_limit = int(os.getenv("EDACHI_GUEST_PER_MINUTE", "5") or "5")
+    per_day_limit = int(os.getenv("EDACHI_GUEST_PER_DAY", "40") or "40")
+    ip = _client_ip(request)
+    key_min = f"edachi:guest:min:{ip}"
+    key_day = f"edachi:guest:day:{ip}:{timezone.now().date().isoformat()}"
+
+    per_min = cache.get(key_min, 0)
+    per_day = cache.get(key_day, 0)
+    blocked = per_min >= per_min_limit or per_day >= per_day_limit
+    meta = {
+        "remaining_minute": max(0, per_min_limit - per_min),
+        "remaining_day": max(0, per_day_limit - per_day),
+        "limits": {"per_minute": per_min_limit, "per_day": per_day_limit},
+    }
+    if blocked:
+        return False, meta
+
+    cache.set(key_min, per_min + 1, timeout=60)
+    cache.set(key_day, per_day + 1, timeout=60 * 60 * 24)
+    return True, meta
 
 
 def _infer_exchange(symbol: str, exchange_hint: str | None = None) -> str:
@@ -1564,3 +1607,118 @@ class BtcPredictionsView(APIView):
     def get(self, request):
         horizon = (request.query_params.get("horizon", "1m") or "1m").strip().lower()
         return Response(btc_predictions(horizon=horizon))
+
+
+class EdachiBootstrapView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        if request.user and request.user.is_authenticated:
+            ctx = build_context(request.user)
+            brief = build_quick_brief(ctx)
+            session = get_or_init_session(request.user)
+            return Response(
+                {
+                    "assistant_name": "EDACHI Assistant",
+                    "user": {"id": request.user.id, "username": request.user.username},
+                    "mode": "authenticated",
+                    "summary": brief,
+                    "portfolios": ctx.portfolios[:12],
+                    "recent_messages": (session.get("messages") or [])[-8:],
+                    "suggested_questions": [
+                        "Show my portfolio list",
+                        "Give me a quick portfolio summary",
+                        "Portfolio sentiment summary",
+                        "Add AAPL to watchlist",
+                        "Create alert for INFY.NS above 1800",
+                    ],
+                }
+            )
+
+        guest_ctx = build_guest_context()
+        return Response(
+            {
+                "assistant_name": "EDACHI Assistant",
+                "mode": "guest",
+                "summary": {
+                    "portfolios": 0,
+                    "holdings": 0,
+                    "watchlist_items": 0,
+                    "market_snapshot": guest_ctx.markets,
+                },
+                "portfolios": [],
+                "recent_messages": [],
+                "suggested_questions": [
+                    "How do I start using PortfolioAnalyzer?",
+                    "What features are available before login?",
+                    "Show market snapshot for Nifty and Sensex",
+                    "How do I create my first portfolio?",
+                ],
+            }
+        )
+
+
+class EdachiAskView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        question = str(request.data.get("question") or "").strip()
+        if not question:
+            return Response({"detail": "question is required"}, status=status.HTTP_400_BAD_REQUEST)
+        if len(question) > 1000:
+            return Response({"detail": "question is too long (max 1000 characters)"}, status=status.HTTP_400_BAD_REQUEST)
+
+        if request.user and request.user.is_authenticated:
+            out = answer_question(request.user, question)
+            out["mode"] = "authenticated"
+            return Response(out)
+
+        allowed, limit_meta = _edachi_guest_limit(request)
+        if not allowed:
+            return Response(
+                {
+                    "detail": "Guest chat limit reached. Please wait or login for a higher limit.",
+                    "limits": limit_meta,
+                },
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+        recent_messages = request.data.get("recent_messages")
+        if not isinstance(recent_messages, list):
+            recent_messages = []
+        out = answer_public_question(question, recent_messages=recent_messages[-6:])
+        out["mode"] = "guest"
+        out["limits"] = limit_meta
+        return Response(out)
+
+
+class EdachiSessionResetView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        if request.user and request.user.is_authenticated:
+            clear_session(request.user)
+            return Response({"ok": True, "detail": "Session cleared", "mode": "authenticated"})
+        return Response({"ok": True, "detail": "Guest chat cleared", "mode": "guest"})
+
+
+class EdachiFeedbackView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        helpful = request.data.get("helpful")
+        if not isinstance(helpful, bool):
+            return Response({"detail": "helpful (boolean) is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        question = str(request.data.get("question") or "").strip()
+        answer = str(request.data.get("answer") or "").strip()
+        source = str(request.data.get("source") or "").strip()
+        if not question or not answer:
+            return Response({"detail": "question and answer are required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        if request.user and request.user.is_authenticated:
+            save_feedback(request.user, question=question[:500], answer=answer[:1500], helpful=helpful, source=source[:40])
+            return Response({"ok": True, "mode": "authenticated"})
+
+        client_id = _client_ip(request)
+        save_guest_feedback(client_id=client_id, question=question[:500], answer=answer[:1500], helpful=helpful, source=source[:40])
+        return Response({"ok": True, "mode": "guest"})
