@@ -478,6 +478,8 @@
     min-height: 220px;
   }
 
+<<<<<<< HEAD
+=======
   .edachiMsg {
     max-width: 94%;
   }
@@ -492,6 +494,7 @@
     justify-self: start;
   }
 
+>>>>>>> origin
   .edachiSuggestions {
     gap: 8px;
   }

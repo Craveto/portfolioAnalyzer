@@ -1,0 +1,80 @@
+name: Azure Backend Deploy
+
+on:
+  push:
+    branches:
+      - azureDeploy
+      - main
+    paths:
+      - "backend/**"
+      - ".github/workflows/azure-backend.yml"
+  workflow_dispatch:
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare backend package
+        run: |
+          mkdir -p deploy
+          rsync -av --delete backend/ deploy/
+
+      - name: Verify backend package
+        run: |
+          ls -la deploy
+          test -f deploy/manage.py
+          test -f deploy/requirements.txt
+          test -f deploy/startup.azure.sh
+
+      - name: Verify startup script content
+        run: |
+          wc -c deploy/startup.azure.sh
+          sed -n '1,20p' deploy/startup.azure.sh
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies for manage.py
+        working-directory: deploy
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.azure.txt ]; then
+            pip install -r requirements.azure.txt
+          else
+            pip install -r requirements.txt
+          fi
+
+      - name: Django migrate + collectstatic
+        working-directory: deploy
+        env:
+          DJANGO_SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY }}
+          DJANGO_DEBUG: "0"
+          DJANGO_ALLOWED_HOSTS: ${{ secrets.DJANGO_ALLOWED_HOSTS }}
+          DATABASE_POOL_URL: ${{ secrets.DATABASE_POOL_URL }}
+          DB_CONN_MAX_AGE: "0"
+          STOCK_INSIGHT_PROVIDER: "databricks"
+          DBX_HOST: ${{ secrets.DBX_HOST }}
+          DBX_HTTP_PATH: ${{ secrets.DBX_HTTP_PATH }}
+          DBX_TOKEN: ${{ secrets.DBX_TOKEN }}
+        run: |
+          python manage.py migrate --noinput
+          python manage.py collectstatic --noinput
+
+
+      - name: Zip backend package
+        run: |
+          cd deploy
+          zip -r ../backend-deploy.zip .
+
+      - name: Deploy to Azure Web App
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: "portfoliobackend"
+          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_PORTFOLIOBACKEND }}
+          package: backend-deploy.zip

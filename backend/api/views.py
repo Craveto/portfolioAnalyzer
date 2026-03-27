@@ -83,6 +83,8 @@ def _client_ip(request) -> str:
 
 def _edachi_guest_limit(request) -> tuple[bool, dict]:
     # Guest policy: lower throughput than logged-in users.
+    per_min_limit = int(os.getenv("EDACHI_GUEST_PER_MINUTE", "5") or "5")
+    per_day_limit = int(os.getenv("EDACHI_GUEST_PER_DAY", "40") or "40")
     per_min_limit = int(os.getenv("EDACHI_GUEST_PER_MINUTE", "15") or "15")
     per_day_limit = int(os.getenv("EDACHI_GUEST_PER_DAY", "250") or "250")
     ip = _client_ip(request)
@@ -1678,6 +1680,8 @@ class EdachiBootstrapView(APIView):
                         "Show my portfolio list",
                         "Give me a quick portfolio summary",
                         "Portfolio sentiment summary",
+                        "Add AAPL to watchlist",
+                        "Create alert for INFY.NS above 1800",
                         "Latest news for INFY.NS",
                         "Recommend stocks based on my holdings",
                         "Add AAPL to watchlist",
@@ -1703,6 +1707,7 @@ class EdachiBootstrapView(APIView):
                     "How do I start using PortfolioAnalyzer?",
                     "What features are available before login?",
                     "Show market snapshot for Nifty and Sensex",
+                    "How do I create my first portfolio?",
                     "Latest news for AAPL",
                     "What is the price of TCS.NS?",
                     "How do I create my first portfolio?"
@@ -1738,6 +1743,7 @@ class EdachiAskView(APIView):
         recent_messages = request.data.get("recent_messages")
         if not isinstance(recent_messages, list):
             recent_messages = []
+        out = answer_public_question(question, recent_messages=recent_messages[-6:])
         out = answer_public_question(question, recent_messages=recent_messages[-8:], client_id=_client_ip(request))
         out["mode"] = "guest"
         out["limits"] = limit_meta

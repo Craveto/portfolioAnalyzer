@@ -192,6 +192,7 @@ export default function EdachiAssistant() {
       const out = await api.edachiAsk(q, { recent_messages: optimisticMessages });
       const full = Array.isArray(out?.messages) ? out.messages : [];
       if (full.length) {
+        setMessages(full);
         const patched = full.map((m) => ({ ...m }));
         const lastAssistant = [...patched].reverse().find((m) => m?.role === "assistant");
         if (lastAssistant && Array.isArray(out?.cards) && out.cards.length) {

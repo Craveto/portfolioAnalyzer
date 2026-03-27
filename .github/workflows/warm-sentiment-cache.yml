@@ -1,0 +1,62 @@
+name: Warm Sentiment Cache (Daily)
+
+on:
+  schedule:
+    # 03:30 UTC = 09:00 IST (adjust as needed, keep after Databricks job)
+    - cron: "30 3 * * *"
+  workflow_dispatch:
+
+jobs:
+  warm-cache:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install backend deps
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run migrations (safe no-op if already applied)
+        working-directory: backend
+        env:
+          DJANGO_SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY }}
+          DJANGO_DEBUG: "0"
+          DJANGO_ALLOWED_HOSTS: ${{ secrets.DJANGO_ALLOWED_HOSTS }}
+          DATABASE_POOL_URL: ${{ secrets.DATABASE_POOL_URL }}
+          DB_CONN_MAX_AGE: "0"
+          STOCK_INSIGHT_PROVIDER: "databricks"
+          DBX_HOST: ${{ secrets.DBX_HOST }}
+          DBX_HTTP_PATH: ${{ secrets.DBX_HTTP_PATH }}
+          DBX_TOKEN: ${{ secrets.DBX_TOKEN }}
+          PORTFOLIO_SENTIMENT_CACHE_SECONDS: "300"
+          STOCK_INSIGHT_CACHE_SECONDS: "180"
+          ANALYSIS_BACKGROUND_REFRESH: "0"
+        run: |
+          python manage.py migrate --noinput
+
+      - name: Warm sentiment cache
+        working-directory: backend
+        env:
+          DJANGO_SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY }}
+          DJANGO_DEBUG: "0"
+          DJANGO_ALLOWED_HOSTS: ${{ secrets.DJANGO_ALLOWED_HOSTS }}
+          DATABASE_POOL_URL: ${{ secrets.DATABASE_POOL_URL }}
+          DB_CONN_MAX_AGE: "0"
+          STOCK_INSIGHT_PROVIDER: "databricks"
+          DBX_HOST: ${{ secrets.DBX_HOST }}
+          DBX_HTTP_PATH: ${{ secrets.DBX_HTTP_PATH }}
+          DBX_TOKEN: ${{ secrets.DBX_TOKEN }}
+          PORTFOLIO_SENTIMENT_CACHE_SECONDS: "300"
+          STOCK_INSIGHT_CACHE_SECONDS: "180"
+          ANALYSIS_BACKGROUND_REFRESH: "0"
+        run: |
+          python manage.py warm_sentiment_cache --max-stocks-per-portfolio 3

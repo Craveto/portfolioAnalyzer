@@ -3801,6 +3801,24 @@ a {
 }
 
 .edachiMsg {
+  margin-bottom: 12px;
+  max-width: 92%;
+  border-radius: 14px;
+  padding: 10px 12px;
+  animation: edachiMsgIn 200ms ease both;
+}
+
+.edachiMsg.user {
+  margin-left: auto;
+  border: 1px solid rgba(112, 199, 255, 0.48);
+  background: linear-gradient(152deg, rgba(69, 146, 255, 0.24), rgba(40, 84, 156, 0.22));
+  box-shadow: 0 8px 24px rgba(31, 102, 206, 0.18);
+}
+
+.edachiMsg.assistant {
+  margin-right: auto;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: linear-gradient(154deg, rgba(255, 255, 255, 0.075), rgba(255, 255, 255, 0.028));
   max-width: 86%;
   border-radius: 14px;
   padding: 10px 12px;
