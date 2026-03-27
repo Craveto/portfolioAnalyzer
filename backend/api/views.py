@@ -33,10 +33,7 @@ from .edachi import (
     save_feedback,
     save_guest_feedback,
 )
-<<<<<<< HEAD
-=======
 from .chat_tools import build_market_intel, chat_observability_dashboard, compute_recommendations, curate_chat_memory
->>>>>>> origin
 from portfolio.models import Holding, Portfolio, Sector, Stock, Transaction
 from watchlist.models import PriceAlert, WatchlistItem
 
@@ -86,13 +83,10 @@ def _client_ip(request) -> str:
 
 def _edachi_guest_limit(request) -> tuple[bool, dict]:
     # Guest policy: lower throughput than logged-in users.
-<<<<<<< HEAD
     per_min_limit = int(os.getenv("EDACHI_GUEST_PER_MINUTE", "5") or "5")
     per_day_limit = int(os.getenv("EDACHI_GUEST_PER_DAY", "40") or "40")
-=======
     per_min_limit = int(os.getenv("EDACHI_GUEST_PER_MINUTE", "15") or "15")
     per_day_limit = int(os.getenv("EDACHI_GUEST_PER_DAY", "250") or "250")
->>>>>>> origin
     ip = _client_ip(request)
     key_min = f"edachi:guest:min:{ip}"
     key_day = f"edachi:guest:day:{ip}:{timezone.now().date().isoformat()}"
@@ -1686,15 +1680,12 @@ class EdachiBootstrapView(APIView):
                         "Show my portfolio list",
                         "Give me a quick portfolio summary",
                         "Portfolio sentiment summary",
-<<<<<<< HEAD
                         "Add AAPL to watchlist",
                         "Create alert for INFY.NS above 1800",
-=======
                         "Latest news for INFY.NS",
                         "Recommend stocks based on my holdings",
                         "Add AAPL to watchlist",
                         "Create alert for INFY.NS above 1800"
->>>>>>> origin
                     ],
                 }
             )
@@ -1716,13 +1707,10 @@ class EdachiBootstrapView(APIView):
                     "How do I start using PortfolioAnalyzer?",
                     "What features are available before login?",
                     "Show market snapshot for Nifty and Sensex",
-<<<<<<< HEAD
                     "How do I create my first portfolio?",
-=======
                     "Latest news for AAPL",
                     "What is the price of TCS.NS?",
                     "How do I create my first portfolio?"
->>>>>>> origin
                 ],
             }
         )
@@ -1755,11 +1743,8 @@ class EdachiAskView(APIView):
         recent_messages = request.data.get("recent_messages")
         if not isinstance(recent_messages, list):
             recent_messages = []
-<<<<<<< HEAD
         out = answer_public_question(question, recent_messages=recent_messages[-6:])
-=======
         out = answer_public_question(question, recent_messages=recent_messages[-8:], client_id=_client_ip(request))
->>>>>>> origin
         out["mode"] = "guest"
         out["limits"] = limit_meta
         return Response(out)
@@ -1796,8 +1781,6 @@ class EdachiFeedbackView(APIView):
         client_id = _client_ip(request)
         save_guest_feedback(client_id=client_id, question=question[:500], answer=answer[:1500], helpful=helpful, source=source[:40])
         return Response({"ok": True, "mode": "guest"})
-<<<<<<< HEAD
-=======
 
 
 class EdachiMarketIntelToolView(APIView):
@@ -1839,4 +1822,3 @@ class EdachiNightlyLearningView(APIView):
         min_helpful = int(request.data.get("min_helpful") or 1)
         max_items = int(request.data.get("max_items") or 800)
         return Response(curate_chat_memory(min_helpful=min_helpful, max_items=max_items))
->>>>>>> origin
