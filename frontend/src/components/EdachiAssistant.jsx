@@ -34,6 +34,58 @@ function writeBootCache(cacheKey, data) {
   } catch {}
 }
 
+function fmtNum(v, nd = 2) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return "--";
+  return n.toLocaleString(undefined, { maximumFractionDigits: nd, minimumFractionDigits: nd });
+}
+
+function safePctForUi(item) {
+  const invested = Number(item?.invested);
+  const pct = Number(item?.unrealized_pnl_pct);
+  if (!Number.isFinite(pct)) return null;
+  if (!Number.isFinite(invested) || invested < 100) return null;
+  if (Math.abs(pct) > 500) return null;
+  return pct;
+}
+
+function parseLegacyHoldingsCard(content) {
+  const text = asText(content, "");
+  if (!text) return null;
+  const lines = text.split("\n").map((x) => x.trim()).filter(Boolean);
+  const items = [];
+  for (const line of lines) {
+    if (!line.startsWith("- ")) continue;
+    const raw = line.slice(2);
+    const symbolMatch = raw.match(/^([A-Za-z0-9.\-_]+)\s*:/) || raw.match(/^([A-Za-z0-9.\-_]+)/);
+    const symbol = String(symbolMatch?.[1] || "").replace(":", "").trim().toUpperCase();
+    if (!symbol) continue;
+    const item = { symbol };
+    const normalized = raw.replace(/\|/g, ",");
+    const chunks = normalized.split(",").map((p) => p.trim()).filter(Boolean);
+    for (const p of chunks) {
+      const low = p.toLowerCase();
+      const num = Number(String(p).replace(/[^0-9.\-]/g, ""));
+      if (low.startsWith("qty")) item.qty = Number.isFinite(num) ? num : null;
+      if (low.startsWith("avg") || low.startsWith("buy")) item.avg_buy_price = Number.isFinite(num) ? num : null;
+      if (low.startsWith("ltp") || low.startsWith("now")) item.last_price = Number.isFinite(num) ? num : null;
+      if (low.startsWith("p/e")) item.pe = Number.isFinite(num) ? num : null;
+    }
+    const pnlMatch = raw.match(/un(?:rlz|realized)\s*p\/?l\s*([-+]?[0-9,]+(?:\.[0-9]+)?)\s*(?:\(([-+]?[0-9,]+(?:\.[0-9]+)?)%\))?/i);
+    if (pnlMatch) {
+      const pnl = Number(String(pnlMatch[1]).replace(/,/g, ""));
+      if (Number.isFinite(pnl)) item.unrealized_pnl = pnl;
+      if (pnlMatch[2]) {
+        const pct = Number(String(pnlMatch[2]).replace(/,/g, ""));
+        if (Number.isFinite(pct)) item.unrealized_pnl_pct = pct;
+      }
+    }
+    items.push(item);
+  }
+  if (!items.length) return null;
+  return { type: "holdings_metrics", items };
+}
+
 export default function EdachiAssistant() {
   const isAuthed = Boolean(getToken());
   const bootCacheKey = `${BOOT_CACHE_PREFIX}_${isAuthed ? "user" : "guest"}`;
