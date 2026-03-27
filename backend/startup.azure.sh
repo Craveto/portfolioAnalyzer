@@ -10,7 +10,11 @@ fi
 
 echo "Installing Python dependencies..."
 python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
+if [ -f "requirements.azure.txt" ]; then
+  python -m pip install -r requirements.azure.txt
+else
+  python -m pip install -r requirements.txt
+fi
 
 echo "Applying migrations..."
 python manage.py migrate --noinput

@@ -9,12 +9,9 @@ from .views import (
     EdachiAskView,
     EdachiBootstrapView,
     EdachiFeedbackView,
-<<<<<<< HEAD
-=======
     EdachiMarketIntelToolView,
     EdachiNightlyLearningView,
     EdachiObservabilityView,
->>>>>>> origin
     EdachiSessionResetView,
     AlertsView,
     BtcNewsView,
@@ -71,12 +68,9 @@ urlpatterns = [
     path("chat/ask/", EdachiAskView.as_view(), name="edachi_ask"),
     path("chat/feedback/", EdachiFeedbackView.as_view(), name="edachi_feedback"),
     path("chat/reset/", EdachiSessionResetView.as_view(), name="edachi_reset"),
-<<<<<<< HEAD
-=======
     path("chat/tools/market-intel/", EdachiMarketIntelToolView.as_view(), name="edachi_market_intel_tool"),
     path("chat/observability/", EdachiObservabilityView.as_view(), name="edachi_observability"),
     path("chat/curate-memory/", EdachiNightlyLearningView.as_view(), name="edachi_curate_memory"),
->>>>>>> origin
     path("stocks/", StocksListView.as_view(), name="stocks_list"),
     path("stocks/live/", StocksLiveSearchView.as_view(), name="stocks_live"),
     path("stocks/detail/", StockDetailView.as_view(), name="stock_detail"),
