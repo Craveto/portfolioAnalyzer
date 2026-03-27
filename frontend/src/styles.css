@@ -3776,6 +3776,9 @@ a {
   padding: 12px;
   overflow: auto;
   min-height: 280px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 .edachiEmpty {
@@ -3798,24 +3801,26 @@ a {
 }
 
 .edachiMsg {
-  margin-bottom: 12px;
-  max-width: 92%;
+  max-width: 86%;
   border-radius: 14px;
   padding: 10px 12px;
   animation: edachiMsgIn 200ms ease both;
+  align-self: flex-start;
 }
 
 .edachiMsg.user {
-  margin-left: auto;
+  align-self: flex-end;
   border: 1px solid rgba(112, 199, 255, 0.48);
-  background: linear-gradient(152deg, rgba(69, 146, 255, 0.24), rgba(40, 84, 156, 0.22));
+  background: linear-gradient(152deg, rgba(59, 143, 255, 0.32), rgba(36, 83, 152, 0.28));
   box-shadow: 0 8px 24px rgba(31, 102, 206, 0.18);
+  border-bottom-right-radius: 6px;
 }
 
 .edachiMsg.assistant {
-  margin-right: auto;
+  align-self: flex-start;
   border: 1px solid rgba(255, 255, 255, 0.16);
   background: linear-gradient(154deg, rgba(255, 255, 255, 0.075), rgba(255, 255, 255, 0.028));
+  border-bottom-left-radius: 6px;
 }
 
 .edachiMsgRole {
@@ -3827,10 +3832,131 @@ a {
   font-weight: 700;
 }
 
+.edachiMsg.user .edachiMsgRole {
+  text-align: right;
+}
+
 .edachiMsgContent {
   white-space: pre-wrap;
   line-height: 1.5;
   color: #eaf3ff;
+}
+
+.edachiCards {
+  margin-top: 8px;
+  display: grid;
+  gap: 8px;
+}
+
+.edachiMiniCard {
+  border: 1px solid rgba(166, 223, 255, 0.2);
+  border-radius: 10px;
+  background: rgba(8, 24, 52, 0.42);
+  padding: 9px 10px;
+}
+
+.edachiMiniTitle {
+  font-size: 12px;
+  font-weight: 800;
+  color: rgba(233, 245, 255, 0.95);
+  margin-bottom: 7px;
+}
+
+.edachiTagGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.edachiTag {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(170, 223, 255, 0.26);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(223, 240, 255, 0.95);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.edachiSimpleList {
+  display: grid;
+  gap: 5px;
+}
+
+.edachiSimpleRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  color: rgba(216, 235, 255, 0.92);
+}
+
+.edachiMetricsCard {
+  margin-top: 10px;
+  border: 1px solid rgba(166, 223, 255, 0.2);
+  border-radius: 10px;
+  background: rgba(8, 24, 52, 0.42);
+  overflow: hidden;
+}
+
+.edachiMetricsHead {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  padding: 8px 10px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.2px;
+  color: rgba(210, 232, 255, 0.9);
+  background: rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.edachiMetricsRows {
+  max-height: 240px;
+  overflow: auto;
+}
+
+.edachiMetricsRow {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.edachiMetricsRow:first-child {
+  border-top: 0;
+}
+
+.edachiMetricsSymbol {
+  font-size: 13px;
+  font-weight: 800;
+  color: rgba(236, 245, 255, 0.95);
+}
+
+.edachiMetricsMeta {
+  margin-top: 2px;
+  font-size: 11px;
+  color: rgba(199, 221, 246, 0.88);
+}
+
+.edachiMetricsPnl {
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.edachiMetricsPnl.up {
+  color: #58e9b5;
+}
+
+.edachiMetricsPnl.down {
+  color: #ff8f9d;
 }
 
 .edachiFeedbackRow {

@@ -34,6 +34,58 @@ function writeBootCache(cacheKey, data) {
   } catch {}
 }
 
+function fmtNum(v, nd = 2) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return "--";
+  return n.toLocaleString(undefined, { maximumFractionDigits: nd, minimumFractionDigits: nd });
+}
+
+function safePctForUi(item) {
+  const invested = Number(item?.invested);
+  const pct = Number(item?.unrealized_pnl_pct);
+  if (!Number.isFinite(pct)) return null;
+  if (!Number.isFinite(invested) || invested < 100) return null;
+  if (Math.abs(pct) > 500) return null;
+  return pct;
+}
+
+function parseLegacyHoldingsCard(content) {
+  const text = asText(content, "");
+  if (!text) return null;
+  const lines = text.split("\n").map((x) => x.trim()).filter(Boolean);
+  const items = [];
+  for (const line of lines) {
+    if (!line.startsWith("- ")) continue;
+    const raw = line.slice(2);
+    const symbolMatch = raw.match(/^([A-Za-z0-9.\-_]+)\s*:/) || raw.match(/^([A-Za-z0-9.\-_]+)/);
+    const symbol = String(symbolMatch?.[1] || "").replace(":", "").trim().toUpperCase();
+    if (!symbol) continue;
+    const item = { symbol };
+    const normalized = raw.replace(/\|/g, ",");
+    const chunks = normalized.split(",").map((p) => p.trim()).filter(Boolean);
+    for (const p of chunks) {
+      const low = p.toLowerCase();
+      const num = Number(String(p).replace(/[^0-9.\-]/g, ""));
+      if (low.startsWith("qty")) item.qty = Number.isFinite(num) ? num : null;
+      if (low.startsWith("avg") || low.startsWith("buy")) item.avg_buy_price = Number.isFinite(num) ? num : null;
+      if (low.startsWith("ltp") || low.startsWith("now")) item.last_price = Number.isFinite(num) ? num : null;
+      if (low.startsWith("p/e")) item.pe = Number.isFinite(num) ? num : null;
+    }
+    const pnlMatch = raw.match(/un(?:rlz|realized)\s*p\/?l\s*([-+]?[0-9,]+(?:\.[0-9]+)?)\s*(?:\(([-+]?[0-9,]+(?:\.[0-9]+)?)%\))?/i);
+    if (pnlMatch) {
+      const pnl = Number(String(pnlMatch[1]).replace(/,/g, ""));
+      if (Number.isFinite(pnl)) item.unrealized_pnl = pnl;
+      if (pnlMatch[2]) {
+        const pct = Number(String(pnlMatch[2]).replace(/,/g, ""));
+        if (Number.isFinite(pct)) item.unrealized_pnl_pct = pct;
+      }
+    }
+    items.push(item);
+  }
+  if (!items.length) return null;
+  return { type: "holdings_metrics", items };
+}
+
 export default function EdachiAssistant() {
   const isAuthed = Boolean(getToken());
   const bootCacheKey = `${BOOT_CACHE_PREFIX}_${isAuthed ? "user" : "guest"}`;
@@ -140,13 +192,19 @@ export default function EdachiAssistant() {
       const out = await api.edachiAsk(q, { recent_messages: optimisticMessages });
       const full = Array.isArray(out?.messages) ? out.messages : [];
       if (full.length) {
-        setMessages(full);
+        const patched = full.map((m) => ({ ...m }));
+        const lastAssistant = [...patched].reverse().find((m) => m?.role === "assistant");
+        if (lastAssistant && Array.isArray(out?.cards) && out.cards.length) {
+          lastAssistant.cards = out.cards;
+        }
+        setMessages(patched);
       } else {
         const assistantMsg = {
           role: "assistant",
           content: asText(out?.answer, "I could not generate a response right now."),
           at: new Date().toISOString(),
           source: out?.source || "fallback",
+          cards: Array.isArray(out?.cards) ? out.cards : [],
         };
         setMessages((prev) => [...prev, assistantMsg].slice(-GUEST_HISTORY_MAX));
       }
@@ -272,6 +330,114 @@ export default function EdachiAssistant() {
               {displayMessages.map((m, idx) => {
                 const key = String(m?.at || `${idx}`);
                 const feedback = feedbackByAt[key] || { busy: false, value: null };
+                const cards = Array.isArray(m?.cards) ? m.cards : [];
+                const holdingsCard =
+                  cards.find((c) => c?.type === "holdings_metrics" && Array.isArray(c?.items))
+                  || parseLegacyHoldingsCard(m?.content);
+                const visualCards = holdingsCard
+                  ? [holdingsCard, ...cards.filter((c) => c?.type !== "holdings_metrics")]
+                  : cards;
+                const messageText = holdingsCard
+                  ? asText(m?.content, "--").split("\n")[0]
+                  : asText(m?.content, "--");
+                const renderCard = (card, cardIndex) => {
+                  if (!card || typeof card !== "object") return null;
+                  if (card.type === "holdings_metrics" && Array.isArray(card.items)) {
+                    return (
+                      <div className="edachiMetricsCard" key={`card:${cardIndex}:${card.type}`}>
+                        <div className="edachiMetricsHead">
+                          <span>Symbol</span>
+                          <span>P/L</span>
+                        </div>
+                        <div className="edachiMetricsRows">
+                          {card.items.slice(0, 8).map((it) => {
+                            const pct = safePctForUi(it);
+                            return (
+                              <div className="edachiMetricsRow" key={`${it.symbol}:${it.portfolio_name || ""}`}>
+                                <div className="edachiMetricsMain">
+                                  <div className="edachiMetricsSymbol">{it.symbol}</div>
+                                  <div className="edachiMetricsMeta">
+                                    Qty {fmtNum(it.qty, 0)} | Avg {fmtNum(it.avg_buy_price)} | LTP {fmtNum(it.last_price)} | P/E {fmtNum(it.pe)}
+                                  </div>
+                                </div>
+                                <div className={`edachiMetricsPnl ${(Number(it.unrealized_pnl) || 0) >= 0 ? "up" : "down"}`}>
+                                  {fmtNum(it.unrealized_pnl)}{pct !== null ? ` (${fmtNum(pct)}%)` : ""}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  }
+                  if (card.type === "portfolios" && Array.isArray(card.items)) {
+                    return (
+                      <div className="edachiMiniCard" key={`card:${cardIndex}:${card.type}`}>
+                        <div className="edachiMiniTitle">Portfolios</div>
+                        <div className="edachiTagGrid">
+                          {card.items.slice(0, 8).map((it) => (
+                            <span className="edachiTag" key={`${it.id}:${it.name}`}>{it.name} ({it.market || "--"})</span>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  }
+                  if (card.type === "holdings" && Array.isArray(card.items)) {
+                    return (
+                      <div className="edachiMiniCard" key={`card:${cardIndex}:${card.type}`}>
+                        <div className="edachiMiniTitle">Holdings Snapshot</div>
+                        <div className="edachiSimpleList">
+                          {card.items.slice(0, 8).map((it) => (
+                            <div className="edachiSimpleRow" key={`${it.symbol}:${it.portfolio_name}`}>
+                              <span>{it.symbol}</span>
+                              <span>Qty {fmtNum(it.qty, 0)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  }
+                  if (card.type === "recommendations" && Array.isArray(card.items)) {
+                    return (
+                      <div className="edachiMiniCard" key={`card:${cardIndex}:${card.type}`}>
+                        <div className="edachiMiniTitle">Recommendations</div>
+                        <div className="edachiTagGrid">
+                          {card.items.slice(0, 8).map((it) => {
+                            const label = typeof it === "string" ? it : `${it.symbol || "--"}${Number.isFinite(Number(it.score)) ? ` (Fit ${Math.round(Number(it.score))})` : ""}`;
+                            return <span className="edachiTag" key={label}>{label}</span>;
+                          })}
+                        </div>
+                      </div>
+                    );
+                  }
+                  if (card.type === "quote" && card.data) {
+                    return (
+                      <div className="edachiMiniCard" key={`card:${cardIndex}:${card.type}`}>
+                        <div className="edachiMiniTitle">{card.data.ticker || "Quote"}</div>
+                        <div className="edachiSimpleRow">
+                          <span>Last</span>
+                          <strong>{fmtNum(card.data.last_price)}</strong>
+                        </div>
+                        <div className="edachiSimpleRow">
+                          <span>Prev Close</span>
+                          <span>{fmtNum(card.data.previous_close)}</span>
+                        </div>
+                      </div>
+                    );
+                  }
+                  if (card.type === "market" && card.data) {
+                    const n = card.data.nifty || {};
+                    const s = card.data.sensex || {};
+                    return (
+                      <div className="edachiMiniCard" key={`card:${cardIndex}:${card.type}`}>
+                        <div className="edachiMiniTitle">Market Snapshot</div>
+                        <div className="edachiSimpleRow"><span>Nifty</span><strong>{fmtNum(n.last_price)}</strong></div>
+                        <div className="edachiSimpleRow"><span>Sensex</span><strong>{fmtNum(s.last_price)}</strong></div>
+                      </div>
+                    );
+                  }
+                  return null;
+                };
                 return (
                   <div
                     key={`${m?.at || idx}:${idx}`}
@@ -279,7 +445,12 @@ export default function EdachiAssistant() {
                     style={{ animationDelay: `${Math.min(idx, 10) * 40}ms` }}
                   >
                     <div className="edachiMsgRole">{m?.role === "user" ? "You" : "EDACHI"}</div>
-                    <div className="edachiMsgContent">{asText(m?.content, "--")}</div>
+                    <div className="edachiMsgContent">{messageText}</div>
+                    {m?.role === "assistant" && visualCards.length ? (
+                      <div className="edachiCards">
+                        {visualCards.slice(0, 3).map((c, cardIdx) => renderCard(c, cardIdx))}
+                      </div>
+                    ) : null}
                     {m?.role === "assistant" ? (
                       <div className="edachiFeedbackRow">
                         <button

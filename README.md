@@ -262,6 +262,12 @@ Important variables from [backend/.env.example](/e:/Bizmetric/Trae/PortFolioAnal
 - `DBX_TOKEN`
 - `ANALYSIS_BACKGROUND_REFRESH`
 - `MARKET_WARMUP_TOKEN`
+- `OPENAI_API_KEY` (for EDACHI broad Q&A)
+- `EDACHI_MODEL_FAST`
+- `EDACHI_MODEL_REASONING`
+- `EDACHI_MODEL_FAST_FALLBACK`
+- `EDACHI_MODEL_REASONING_FALLBACK`
+- `EDACHI_USE_LANGGRAPH` (set `1` to enable graph orchestration)
 
 ### Frontend
 
@@ -286,8 +292,16 @@ Important variable from [frontend/.env.example](/e:/Bizmetric/Trae/PortFolioAnal
 - `GET /api/market/summary/`
 - `POST /api/market/warm/`
 - `GET /api/market/quote/`
+- `POST /api/chat/tools/market-intel/`
 - `GET /api/market/metals/summary/`
 - `GET /api/market/metals/news/`
+
+### EDACHI observability and learning
+
+- `GET /api/chat/observability/` (staff only)
+- `POST /api/chat/curate-memory/` (staff only)
+  - Body options: `min_helpful`, `max_items`
+  - Use this endpoint in nightly scheduler/cron to build curated retrieval memory.
 - `GET /api/market/metals/quote/`
 - `GET /api/market/metals/forecast/`
 - `GET /api/market/btc/summary/`
