@@ -34,61 +34,6 @@ function writeBootCache(cacheKey, data) {
   } catch {}
 }
 
-<<<<<<< HEAD
-=======
-function fmtNum(v, nd = 2) {
-  const n = Number(v);
-  if (!Number.isFinite(n)) return "--";
-  return n.toLocaleString(undefined, { maximumFractionDigits: nd, minimumFractionDigits: nd });
-}
-
-function safePctForUi(item) {
-  const invested = Number(item?.invested);
-  const pct = Number(item?.unrealized_pnl_pct);
-  if (!Number.isFinite(pct)) return null;
-  if (!Number.isFinite(invested) || invested < 100) return null;
-  if (Math.abs(pct) > 500) return null;
-  return pct;
-}
-
-function parseLegacyHoldingsCard(content) {
-  const text = asText(content, "");
-  if (!text) return null;
-  const lines = text.split("\n").map((x) => x.trim()).filter(Boolean);
-  const items = [];
-  for (const line of lines) {
-    if (!line.startsWith("- ")) continue;
-    const raw = line.slice(2);
-    const symbolMatch = raw.match(/^([A-Za-z0-9.\-_]+)\s*:/) || raw.match(/^([A-Za-z0-9.\-_]+)/);
-    const symbol = String(symbolMatch?.[1] || "").replace(":", "").trim().toUpperCase();
-    if (!symbol) continue;
-    const item = { symbol };
-    const normalized = raw.replace(/\|/g, ",");
-    const chunks = normalized.split(",").map((p) => p.trim()).filter(Boolean);
-    for (const p of chunks) {
-      const low = p.toLowerCase();
-      const num = Number(String(p).replace(/[^0-9.\-]/g, ""));
-      if (low.startsWith("qty")) item.qty = Number.isFinite(num) ? num : null;
-      if (low.startsWith("avg") || low.startsWith("buy")) item.avg_buy_price = Number.isFinite(num) ? num : null;
-      if (low.startsWith("ltp") || low.startsWith("now")) item.last_price = Number.isFinite(num) ? num : null;
-      if (low.startsWith("p/e")) item.pe = Number.isFinite(num) ? num : null;
-    }
-    const pnlMatch = raw.match(/un(?:rlz|realized)\s*p\/?l\s*([-+]?[0-9,]+(?:\.[0-9]+)?)\s*(?:\(([-+]?[0-9,]+(?:\.[0-9]+)?)%\))?/i);
-    if (pnlMatch) {
-      const pnl = Number(String(pnlMatch[1]).replace(/,/g, ""));
-      if (Number.isFinite(pnl)) item.unrealized_pnl = pnl;
-      if (pnlMatch[2]) {
-        const pct = Number(String(pnlMatch[2]).replace(/,/g, ""));
-        if (Number.isFinite(pct)) item.unrealized_pnl_pct = pct;
-      }
-    }
-    items.push(item);
-  }
-  if (!items.length) return null;
-  return { type: "holdings_metrics", items };
-}
-
->>>>>>> origin
 export default function EdachiAssistant() {
   const isAuthed = Boolean(getToken());
   const bootCacheKey = `${BOOT_CACHE_PREFIX}_${isAuthed ? "user" : "guest"}`;
@@ -195,26 +140,20 @@ export default function EdachiAssistant() {
       const out = await api.edachiAsk(q, { recent_messages: optimisticMessages });
       const full = Array.isArray(out?.messages) ? out.messages : [];
       if (full.length) {
-<<<<<<< HEAD
         setMessages(full);
-=======
         const patched = full.map((m) => ({ ...m }));
         const lastAssistant = [...patched].reverse().find((m) => m?.role === "assistant");
         if (lastAssistant && Array.isArray(out?.cards) && out.cards.length) {
           lastAssistant.cards = out.cards;
         }
         setMessages(patched);
->>>>>>> origin
       } else {
         const assistantMsg = {
           role: "assistant",
           content: asText(out?.answer, "I could not generate a response right now."),
           at: new Date().toISOString(),
           source: out?.source || "fallback",
-<<<<<<< HEAD
-=======
           cards: Array.isArray(out?.cards) ? out.cards : [],
->>>>>>> origin
         };
         setMessages((prev) => [...prev, assistantMsg].slice(-GUEST_HISTORY_MAX));
       }
@@ -340,8 +279,6 @@ export default function EdachiAssistant() {
               {displayMessages.map((m, idx) => {
                 const key = String(m?.at || `${idx}`);
                 const feedback = feedbackByAt[key] || { busy: false, value: null };
-<<<<<<< HEAD
-=======
                 const cards = Array.isArray(m?.cards) ? m.cards : [];
                 const holdingsCard =
                   cards.find((c) => c?.type === "holdings_metrics" && Array.isArray(c?.items))
@@ -450,7 +387,6 @@ export default function EdachiAssistant() {
                   }
                   return null;
                 };
->>>>>>> origin
                 return (
                   <div
                     key={`${m?.at || idx}:${idx}`}
@@ -458,16 +394,13 @@ export default function EdachiAssistant() {
                     style={{ animationDelay: `${Math.min(idx, 10) * 40}ms` }}
                   >
                     <div className="edachiMsgRole">{m?.role === "user" ? "You" : "EDACHI"}</div>
-<<<<<<< HEAD
                     <div className="edachiMsgContent">{asText(m?.content, "--")}</div>
-=======
                     <div className="edachiMsgContent">{messageText}</div>
                     {m?.role === "assistant" && visualCards.length ? (
                       <div className="edachiCards">
                         {visualCards.slice(0, 3).map((c, cardIdx) => renderCard(c, cardIdx))}
                       </div>
                     ) : null}
->>>>>>> origin
                     {m?.role === "assistant" ? (
                       <div className="edachiFeedbackRow">
                         <button

@@ -3776,12 +3776,9 @@ a {
   padding: 12px;
   overflow: auto;
   min-height: 280px;
-<<<<<<< HEAD
-=======
   display: flex;
   flex-direction: column;
   gap: 10px;
->>>>>>> origin
 }
 
 .edachiEmpty {
@@ -3804,7 +3801,6 @@ a {
 }
 
 .edachiMsg {
-<<<<<<< HEAD
   margin-bottom: 12px;
   max-width: 92%;
   border-radius: 14px;
@@ -3823,7 +3819,6 @@ a {
   margin-right: auto;
   border: 1px solid rgba(255, 255, 255, 0.16);
   background: linear-gradient(154deg, rgba(255, 255, 255, 0.075), rgba(255, 255, 255, 0.028));
-=======
   max-width: 86%;
   border-radius: 14px;
   padding: 10px 12px;
@@ -3844,7 +3839,6 @@ a {
   border: 1px solid rgba(255, 255, 255, 0.16);
   background: linear-gradient(154deg, rgba(255, 255, 255, 0.075), rgba(255, 255, 255, 0.028));
   border-bottom-left-radius: 6px;
->>>>>>> origin
 }
 
 .edachiMsgRole {
@@ -3856,21 +3850,16 @@ a {
   font-weight: 700;
 }
 
-<<<<<<< HEAD
-=======
 .edachiMsg.user .edachiMsgRole {
   text-align: right;
 }
 
->>>>>>> origin
 .edachiMsgContent {
   white-space: pre-wrap;
   line-height: 1.5;
   color: #eaf3ff;
 }
 
-<<<<<<< HEAD
-=======
 .edachiCards {
   margin-top: 8px;
   display: grid;
@@ -3988,7 +3977,6 @@ a {
   color: #ff8f9d;
 }
 
->>>>>>> origin
 .edachiFeedbackRow {
   margin-top: 8px;
   display: inline-flex;
