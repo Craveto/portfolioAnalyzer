@@ -499,81 +499,18 @@ export default function Portfolio() {
       setRecoError("");
     }
     try {
-      const sectorKeys = Array.from(sectorWeights.keys());
-      const sectorQueries = sectorKeys.slice(0, 3);
-      const marketHints = String(portfolio?.market || "").toUpperCase() === "IN"
-        ? ["NIFTY", "BANK", "IT"]
-        : ["NASDAQ", "TECH", "HEALTH"];
-      const searchQueries = [...sectorQueries, ...marketHints].slice(0, 6);
-
-      const merged = new Map();
-      const searchResults = await Promise.all(
-        searchQueries.map((qWord) => api.searchStocksLive(qWord).catch(() => []))
-      );
-      for (const batch of searchResults) {
-        for (const item of Array.isArray(batch) ? batch : []) {
-          const symbol = String(item?.symbol || "").toUpperCase();
-          if (!symbol || heldSymbolsSet.has(symbol) || merged.has(symbol)) continue;
-          merged.set(symbol, item);
-        }
-      }
-
-      const fallbackSymbolsIn = [
-        "RELIANCE.NS", "HDFCBANK.NS", "ICICIBANK.NS", "SBIN.NS", "LT.NS",
-        "ITC.NS", "TATAMOTORS.NS", "SUNPHARMA.NS", "MARUTI.NS", "BHARTIARTL.NS"
-      ];
-      const fallbackSymbolsUs = ["AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "JPM", "UNH"];
-      const fallbackSymbols = String(portfolio?.market || "").toUpperCase() === "IN" ? fallbackSymbolsIn : fallbackSymbolsUs;
-
-      for (const symbol of fallbackSymbols) {
-        if (!heldSymbolsSet.has(symbol) && !merged.has(symbol)) {
-          merged.set(symbol, { symbol, name: symbol, exchange: symbol.includes(".") ? "NSE/BSE" : "US" });
-        }
-      }
-
-      const candidates = Array.from(merged.values()).slice(0, 18);
-      const preview = await api.stocksPreview(candidates.map((c) => c.symbol));
-      const previewBySymbol = {};
-      for (const p of Array.isArray(preview) ? preview : []) {
-        const symbol = String(p?.symbol || "").toUpperCase();
-        if (symbol) previewBySymbol[symbol] = p;
-      }
-
-      const ranked = candidates
-        .map((item) => {
-          const symbol = String(item?.symbol || "").toUpperCase();
-          const sectorLabel = asText(item?.sector?.name || item?.sector || "", "");
-          const sectorScore = sectorWeights.get(normKey(sectorLabel)) || 0;
-          const p = previewBySymbol[symbol] || {};
-          const pe = toNum(p?.pe);
-          const discount = toNum(p?.discount_from_52w_high_pct);
-          const last = toNum(p?.last_price);
-
-          let score = sectorScore * 30;
-          if (pe !== null && pe >= 8 && pe <= 28) score += 18;
-          if (discount !== null && discount >= 6 && discount <= 35) score += 22;
-          if (last !== null && last > 0) score += 8;
-
-          const reasons = [];
-          if (sectorScore > 0) reasons.push("Sector match");
-          if (pe !== null && pe <= 22) reasons.push("Reasonable P/E");
-          if (discount !== null && discount >= 10) reasons.push("Pullback from 52W high");
-          if (!reasons.length) reasons.push("High liquidity candidate");
-
-          return {
-            symbol,
-            name: asText(item?.name, symbol),
-            exchange: asText(item?.exchange, "--"),
-            sector: sectorLabel || "--",
-            pe,
-            discount,
-            lastPrice: last,
-            score,
-            reasons,
-          };
-        })
-        .sort((a, b) => b.score - a.score)
-        .slice(0, 10);
+      const out = await api.portfolioRecommendations(portfolioId, force);
+      const ranked = (Array.isArray(out?.items) ? out.items : []).map((item) => ({
+        symbol: String(item?.symbol || "").toUpperCase(),
+        name: asText(item?.name, String(item?.symbol || "").toUpperCase()),
+        exchange: asText(item?.exchange, "--"),
+        sector: asText(item?.sector, "--"),
+        pe: toNum(item?.pe),
+        discount: toNum(item?.discount_from_52w_high_pct),
+        lastPrice: toNum(item?.last_price),
+        score: toNum(item?.score) ?? 0,
+        reasons: Array.isArray(item?.reasons) ? item.reasons : [],
+      }));
 
       setRecommendations(ranked);
       writeRecoCache(portfolioId, ranked, signature);

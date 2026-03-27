@@ -33,6 +33,10 @@ from .edachi import (
     save_feedback,
     save_guest_feedback,
 )
+<<<<<<< HEAD
+=======
+from .chat_tools import build_market_intel, chat_observability_dashboard, compute_recommendations, curate_chat_memory
+>>>>>>> origin
 from portfolio.models import Holding, Portfolio, Sector, Stock, Transaction
 from watchlist.models import PriceAlert, WatchlistItem
 
@@ -82,8 +86,13 @@ def _client_ip(request) -> str:
 
 def _edachi_guest_limit(request) -> tuple[bool, dict]:
     # Guest policy: lower throughput than logged-in users.
+<<<<<<< HEAD
     per_min_limit = int(os.getenv("EDACHI_GUEST_PER_MINUTE", "5") or "5")
     per_day_limit = int(os.getenv("EDACHI_GUEST_PER_DAY", "40") or "40")
+=======
+    per_min_limit = int(os.getenv("EDACHI_GUEST_PER_MINUTE", "15") or "15")
+    per_day_limit = int(os.getenv("EDACHI_GUEST_PER_DAY", "250") or "250")
+>>>>>>> origin
     ip = _client_ip(request)
     key_min = f"edachi:guest:min:{ip}"
     key_day = f"edachi:guest:day:{ip}:{timezone.now().date().isoformat()}"
@@ -1240,6 +1249,54 @@ class PortfoliosRetrieveDestroyView(APIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+class PortfolioRecommendationsView(APIView):
+    def get(self, request, portfolio_id: int):
+        portfolio = Portfolio.objects.get(id=portfolio_id, user=request.user)
+        force = request.query_params.get("force") == "1"
+        fresh_seconds = int(os.getenv("PORTFOLIO_RECO_CACHE_SECONDS", "180") or "180")
+        cache_key = f"portfolio_reco:{request.user.id}:{portfolio.id}"
+        snapshot = CachedPayload.objects.filter(key=cache_key).first()
+        now = timezone.now()
+
+        if snapshot and not force:
+            age = (now - snapshot.updated_at).total_seconds()
+            payload = dict(snapshot.payload or {})
+            if age <= fresh_seconds:
+                payload["meta"] = {
+                    "source": "snapshot",
+                    "age_seconds": round(age, 2),
+                    "updated_at": snapshot.updated_at.isoformat(),
+                }
+                return Response(payload)
+
+        holdings_qs = Holding.objects.filter(portfolio=portfolio).select_related("stock", "stock__sector")
+        holdings = [
+            {
+                "symbol": h.stock.symbol,
+                "sector": (h.stock.sector.name if h.stock.sector_id else ""),
+                "qty": float(h.qty),
+                "avg_buy_price": float(h.avg_buy_price),
+            }
+            for h in holdings_qs
+        ]
+        ctx = type(
+            "RecoCtx",
+            (),
+            {
+                "holdings": holdings,
+                "portfolios": [{"id": portfolio.id, "name": portfolio.name, "market": portfolio.market}],
+            },
+        )()
+        items = compute_recommendations(ctx, limit=10)
+        payload = {
+            "portfolio_id": portfolio.id,
+            "items": items,
+            "meta": {"source": "live", "generated_at": now.isoformat()},
+        }
+        CachedPayload.objects.update_or_create(key=cache_key, defaults={"payload": payload})
+        return Response(payload)
+
+
 class HoldingsListCreateView(APIView):
     def get(self, request, portfolio_id: int):
         portfolio = Portfolio.objects.get(id=portfolio_id, user=request.user)
@@ -1629,8 +1686,15 @@ class EdachiBootstrapView(APIView):
                         "Show my portfolio list",
                         "Give me a quick portfolio summary",
                         "Portfolio sentiment summary",
+<<<<<<< HEAD
                         "Add AAPL to watchlist",
                         "Create alert for INFY.NS above 1800",
+=======
+                        "Latest news for INFY.NS",
+                        "Recommend stocks based on my holdings",
+                        "Add AAPL to watchlist",
+                        "Create alert for INFY.NS above 1800"
+>>>>>>> origin
                     ],
                 }
             )
@@ -1652,7 +1716,13 @@ class EdachiBootstrapView(APIView):
                     "How do I start using PortfolioAnalyzer?",
                     "What features are available before login?",
                     "Show market snapshot for Nifty and Sensex",
+<<<<<<< HEAD
                     "How do I create my first portfolio?",
+=======
+                    "Latest news for AAPL",
+                    "What is the price of TCS.NS?",
+                    "How do I create my first portfolio?"
+>>>>>>> origin
                 ],
             }
         )
@@ -1685,7 +1755,11 @@ class EdachiAskView(APIView):
         recent_messages = request.data.get("recent_messages")
         if not isinstance(recent_messages, list):
             recent_messages = []
+<<<<<<< HEAD
         out = answer_public_question(question, recent_messages=recent_messages[-6:])
+=======
+        out = answer_public_question(question, recent_messages=recent_messages[-8:], client_id=_client_ip(request))
+>>>>>>> origin
         out["mode"] = "guest"
         out["limits"] = limit_meta
         return Response(out)
@@ -1722,3 +1796,47 @@ class EdachiFeedbackView(APIView):
         client_id = _client_ip(request)
         save_guest_feedback(client_id=client_id, question=question[:500], answer=answer[:1500], helpful=helpful, source=source[:40])
         return Response({"ok": True, "mode": "guest"})
+<<<<<<< HEAD
+=======
+
+
+class EdachiMarketIntelToolView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        question = str(request.data.get("question") or "").strip()
+        symbol = str(request.data.get("symbol") or "").strip()
+        if not question and not symbol:
+            return Response({"detail": "question or symbol is required"}, status=status.HTTP_400_BAD_REQUEST)
+        merged_q = question or f"latest market update for {symbol}"
+        if symbol and symbol.upper() not in merged_q.upper():
+            merged_q = f"{merged_q} {symbol}"
+
+        if request.user and request.user.is_authenticated:
+            ctx = build_context(request.user)
+            payload = build_market_intel(question=merged_q, user=request.user, ctx=ctx, include_recommendations=True)
+            return Response({"ok": True, "mode": "authenticated", "data": payload})
+
+        payload = build_market_intel(question=merged_q, user=None, ctx=None, include_recommendations=False)
+        return Response({"ok": True, "mode": "guest", "data": payload})
+
+
+class EdachiObservabilityView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        if not request.user.is_staff:
+            return Response({"detail": "Admin access required"}, status=status.HTTP_403_FORBIDDEN)
+        return Response(chat_observability_dashboard())
+
+
+class EdachiNightlyLearningView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        if not request.user.is_staff:
+            return Response({"detail": "Admin access required"}, status=status.HTTP_403_FORBIDDEN)
+        min_helpful = int(request.data.get("min_helpful") or 1)
+        max_items = int(request.data.get("max_items") or 800)
+        return Response(curate_chat_memory(min_helpful=min_helpful, max_items=max_items))
+>>>>>>> origin

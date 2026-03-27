@@ -478,6 +478,23 @@
     min-height: 220px;
   }
 
+<<<<<<< HEAD
+=======
+  .edachiMsg {
+    max-width: 94%;
+  }
+
+  .edachiMetricsHead,
+  .edachiMetricsRow {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+
+  .edachiMetricsPnl {
+    justify-self: start;
+  }
+
+>>>>>>> origin
   .edachiSuggestions {
     gap: 8px;
   }

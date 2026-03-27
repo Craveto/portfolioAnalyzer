@@ -241,6 +241,10 @@ export const api = {
     const qs = force ? "?force=1" : "";
     return apiFetch(`/api/portfolios/${portfolioId}/${qs}`, { auth: true });
   },
+  portfolioRecommendations(portfolioId, force = false) {
+    const qs = force ? "?force=1" : "";
+    return apiFetch(`/api/portfolios/${portfolioId}/recommendations/${qs}`, { auth: true });
+  },
   deletePortfolio(portfolioId) {
     return apiFetch(`/api/portfolios/${portfolioId}/`, { method: "DELETE", auth: true });
   },

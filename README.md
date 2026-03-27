@@ -2,7 +2,8 @@
 Now you can play with this webapp on 
 https://thankful-forest-0dddffc00.2.azurestaticapps.net/
 
-<img width="1510" height="727" alt="image" src="https://github.com/user-attachments/assets/2aabbf4d-bcc5-432f-807f-5332452406f7" />
+<img width="1504" height="924" alt="image" src="https://github.com/user-attachments/assets/69e36502-abb2-488c-a96e-cfd563249f14" />
+
 
 
 
@@ -261,6 +262,12 @@ Important variables from [backend/.env.example](/e:/Bizmetric/Trae/PortFolioAnal
 - `DBX_TOKEN`
 - `ANALYSIS_BACKGROUND_REFRESH`
 - `MARKET_WARMUP_TOKEN`
+- `OPENAI_API_KEY` (for EDACHI broad Q&A)
+- `EDACHI_MODEL_FAST`
+- `EDACHI_MODEL_REASONING`
+- `EDACHI_MODEL_FAST_FALLBACK`
+- `EDACHI_MODEL_REASONING_FALLBACK`
+- `EDACHI_USE_LANGGRAPH` (set `1` to enable graph orchestration)
 
 ### Frontend
 
@@ -285,8 +292,16 @@ Important variable from [frontend/.env.example](/e:/Bizmetric/Trae/PortFolioAnal
 - `GET /api/market/summary/`
 - `POST /api/market/warm/`
 - `GET /api/market/quote/`
+- `POST /api/chat/tools/market-intel/`
 - `GET /api/market/metals/summary/`
 - `GET /api/market/metals/news/`
+
+### EDACHI observability and learning
+
+- `GET /api/chat/observability/` (staff only)
+- `POST /api/chat/curate-memory/` (staff only)
+  - Body options: `min_helpful`, `max_items`
+  - Use this endpoint in nightly scheduler/cron to build curated retrieval memory.
 - `GET /api/market/metals/quote/`
 - `GET /api/market/metals/forecast/`
 - `GET /api/market/btc/summary/`
