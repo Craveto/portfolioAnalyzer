@@ -446,7 +446,6 @@ export default function EdachiAssistant() {
                     style={{ animationDelay: `${Math.min(idx, 10) * 40}ms` }}
                   >
                     <div className="edachiMsgRole">{m?.role === "user" ? "You" : "EDACHI"}</div>
-                    <div className="edachiMsgContent">{asText(m?.content, "--")}</div>
                     <div className="edachiMsgContent">{messageText}</div>
                     {m?.role === "assistant" && visualCards.length ? (
                       <div className="edachiCards">
