@@ -1828,3 +1828,4 @@ def answer_public_question(
         return out
     except Exception:
         return _answer_public_question_legacy(question, recent_messages=recent_messages, client_id=client_id)
+
